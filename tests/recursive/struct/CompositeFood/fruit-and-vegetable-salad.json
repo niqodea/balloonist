@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    {
+      "type": "CompositeFood",
+      "name": "vegetable-salad"
+    },
+    {
+      "type": "CompositeFood",
+      "name": "fruit-salad"
+    }
+  ]
+}

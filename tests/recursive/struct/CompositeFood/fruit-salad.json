@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    {
+      "type": "SimpleFood",
+      "name": "banana"
+    },
+    {
+      "type": "SimpleFood",
+      "name": "apple"
+    }
+  ]
+}

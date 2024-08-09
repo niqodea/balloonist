@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    {
+      "type": "SimpleFood",
+      "name": "carrot"
+    },
+    {
+      "type": "SimpleFood",
+      "name": "date"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "size": {
+    "type": "Animal.Size",
+    "fields": {
+      "height": 12,
+      "weight": 7
+    }
+  },
+  "purr_type": null
+}
