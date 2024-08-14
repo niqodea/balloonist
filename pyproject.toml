@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "balloons"
+version = "0.1.0"
+description = "Deflate dataclasses into a database of JSON files and inflate them back"
+authors = ["Nicola De Angeli <112023843+niqodea@users.noreply.github.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+
+# Linters
+mypy = "*"
+ruff = "*"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = [
+  "B",  # flake8-bugbear
+  "E",  # pycodestyle
+  "F",  # Pyflakes
+  "I",  # isort
+  "SIM",  # flake8-simplify
+  "UP",  # pyupgrade
+]
+
+# Ignore unused imports in __init__.py files (would need __all__ otherwise)
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
