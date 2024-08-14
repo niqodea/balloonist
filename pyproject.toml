@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Deflate dataclasses into a database of JSON files and inflate them back"
 authors = ["Nicola De Angeli <112023843+niqodea@users.noreply.github.com>"]
 license = "MIT"
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
