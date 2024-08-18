@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from balloons import AnonBalloon, FrozenDict, NamedBalloon
+from balloons import AnonBalloon, NamedBalloon
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Animal(NamedBalloon):
     size: Size
 
@@ -15,16 +15,16 @@ class Animal(NamedBalloon):
         weight: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Cat(Animal):
     purr_type: str | None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Dog(Animal):
     obedience: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Owner(NamedBalloon):
-    pet_nicknames: FrozenDict[Animal, str]
+    pet_nicknames: dict[Animal, str]

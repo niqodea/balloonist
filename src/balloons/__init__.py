@@ -4,6 +4,5 @@ from balloons.core import (
     Balloonist,
     BalloonistFactory,
     Field,
-    FrozenDict,
     NamedBalloon,
 )

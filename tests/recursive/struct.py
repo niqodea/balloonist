@@ -12,15 +12,15 @@ DATE = SimpleFood(name="date", calories=30)
 
 FRUIT_SALAD = CompositeFood(
     name="fruit-salad",
-    ingredients=frozenset({APPLE, BANANA}),
+    ingredients={APPLE, BANANA},
 )
 
 VEGETABLE_SALAD = CompositeFood(
     name="vegetable-salad",
-    ingredients=frozenset({CARROT, DATE}),
+    ingredients={CARROT, DATE},
 )
 
 FRUIT_AND_VEGETABLE_SALAD = CompositeFood(
     name="fruit-and-vegetable-salad",
-    ingredients=frozenset({FRUIT_SALAD, VEGETABLE_SALAD}),
+    ingredients={FRUIT_SALAD, VEGETABLE_SALAD},
 )

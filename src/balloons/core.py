@@ -15,8 +15,6 @@ from typing import (
     get_type_hints,
 )
 
-from balloons.utils import FrozenDict
-
 BasicType = int | float | str | bool
 """
 The type alias for JSON basic types.
@@ -34,7 +32,8 @@ class Balloon:
     pass
 
 
-@dataclass(frozen=True)
+# Ref: https://stackoverflow.com/questions/53990296
+@dataclass(frozen=True, eq=False)
 class NamedBalloon(Balloon):
     """
     The base class for named balloons.
@@ -47,6 +46,11 @@ class NamedBalloon(Balloon):
 
     def __hash__(self) -> int:
         return hash(f"{self.__class__.__qualname__}:{self.name}")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, NamedBalloon):
+            return False
+        return hash(self) == hash(other)
 
 
 @dataclass(frozen=True)
@@ -68,7 +72,7 @@ Value that can be dumped to JSON format.
 """
 
 F = TypeVar("F", bound="Field")
-Field: TypeAlias = FrozenDict[NS, F] | frozenset[NS] | tuple[F, ...] | S | B | None
+Field: TypeAlias = dict[NS, F] | set[NS] | tuple[F, ...] | S | B | None
 """
 Field of a balloon.
 """
@@ -113,12 +117,12 @@ class FieldDeflator:
                 }
             raise ValueError(f"Unsupported balloon type: {type(value)}")
 
-        if isinstance(value, FrozenDict):
+        if isinstance(value, dict):
             return {
                 self.deflate(key): self.deflate(value) for key, value in value.items()
             }
 
-        if isinstance(value, (frozenset, tuple)):
+        if isinstance(value, (set, tuple)):
             return [self.deflate(item) for item in value]
 
         if isinstance(value, BasicType):  # type: ignore[arg-type,misc]
@@ -163,25 +167,23 @@ class FieldInflator:
         type_origin = get_origin(static_type)
         type_args = get_args(static_type)
 
-        if type_origin is FrozenDict:
+        if type_origin is dict:
             assert isinstance(json_, dict)
             key_type, value_type = type_args
-            return FrozenDict(
-                {
-                    self.inflate(key, key_type): self.inflate(value, value_type)
-                    for key, value in json_.items()
-                }
-            )  # type: ignore[return-value]
+            return {
+                self.inflate(key, key_type): self.inflate(value, value_type)
+                for key, value in json_.items()
+            }  # type: ignore[return-value]
 
         if type_origin is tuple:
             assert isinstance(json_, list)
             (item_type,) = type_args
             return tuple(self.inflate(item, item_type) for item in json_)  # type: ignore[return-value]
 
-        if type_origin is frozenset:
+        if type_origin is set:
             assert isinstance(json_, list)
             (item_type,) = type_args
-            return frozenset(self.inflate(item, item_type) for item in json_)  # type: ignore[return-value]
+            return {self.inflate(item, item_type) for item in json_}  # type: ignore[return-value]
 
         if type_origin is UnionType:
             # NOTE: Arbitrary union types not implemented for now
@@ -320,12 +322,7 @@ class BalloonSpecialist(BalloonProvider[NS], BalloonTracker[NS]):
             return
 
         if balloon.name in self._names:
-            stored_balloon = self.get(
-                balloon.name
-            )  # Load balloon from source of truth file
-            assert balloon == stored_balloon
-            # We want to keep only one runtime object around, so we overwrite the key
-            # that currently holds stored_balloon
+            # We assume the stored balloon is the same as the provided one
             self._balloons[balloon.name] = balloon
             return
 

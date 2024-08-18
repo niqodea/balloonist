@@ -1,5 +1,3 @@
-from balloons import FrozenDict
-
 from tests.basic.schema import Animal, Cat, Dog, Owner
 
 ABIGAIL = Cat(
@@ -42,15 +40,15 @@ CODY = Dog(
 
 ALICE = Owner(
     name="alice",
-    pet_nicknames=FrozenDict({ABIGAIL: "abby", ALEX: "ale"}),
+    pet_nicknames={ABIGAIL: "abby", ALEX: "ale"},
 )
 
 BOB = Owner(
     name="bob",
-    pet_nicknames=FrozenDict({BENJAMIN: "ben", BELLA: "bel"}),
+    pet_nicknames={BENJAMIN: "ben", BELLA: "bel"},
 )
 
 CAROL = Owner(
     name="carol",
-    pet_nicknames=FrozenDict({CHARLOTTE: "charlie", CODY: "cod"}),
+    pet_nicknames={CHARLOTTE: "charlie", CODY: "cod"},
 )

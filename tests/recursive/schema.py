@@ -16,4 +16,4 @@ class SimpleFood(Food):
 
 @dataclass(frozen=True)
 class CompositeFood(Food):
-    ingredients: frozenset[Food]
+    ingredients: set[Food]
