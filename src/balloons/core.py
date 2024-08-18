@@ -399,7 +399,9 @@ class NamespaceManager:
         :param type_: The balloon type.
         """
         if name not in self._name_to_types:
-            self._name_to_types[name] = {type_}
+            self._name_to_types[name] = set()
+
+        if type_ in self._name_to_types[name]:
             return
 
         relevant_namespace_types = {
@@ -411,7 +413,7 @@ class NamespaceManager:
                     raise ValueError(
                         "Found balloon with same name in same namespace.\n"
                         f"Name: {name}\n"
-                        f"Namespace type: {namespace_type}"
+                        f"Namespace type: {namespace_type}\n"
                         f"Existing type: {tracked_type}\n"
                         f"New type: {type_}"
                     )
