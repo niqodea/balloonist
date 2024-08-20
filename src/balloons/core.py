@@ -488,7 +488,7 @@ class Balloonist(Generic[BL]):
         balloon_specialist = self._balloon_specialists[type_]  # type: ignore[index]
         return balloon_specialist.get(name)  # type: ignore[return-value]
 
-    def track(self, balloon: BLN) -> None:
+    def track(self, balloon: BL) -> None:
         """
         Track a balloon, possibly deflating it to the JSON database if missing from
         disk.
