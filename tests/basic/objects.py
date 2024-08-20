@@ -1,7 +1,4 @@
-from enum import Enum
-
 from tests.basic.schema import Animal, Cat, Dog, Owner
-
 
 # Cats
 ABIGAIL = Cat(

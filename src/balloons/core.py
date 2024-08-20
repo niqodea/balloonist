@@ -5,17 +5,18 @@ from dataclasses import dataclass, make_dataclass
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
+    ClassVar,
     Generic,
     Mapping,
-    Self,
-    ClassVar,
     Protocol,
+    Self,
     TypeAlias,
     TypeVar,
     get_args,
     get_origin,
     get_type_hints,
 )
+
 from typing_extensions import dataclass_transform
 
 BasicType = int | float | str | bool

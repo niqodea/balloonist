@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from balloons import BalloonistFactory
-
-from tests.basic.schema import Animal, Cat, Dog, Owner
 from tests.basic.objects import (
     ABIGAIL,
     ALEX,
@@ -16,6 +14,7 @@ from tests.basic.objects import (
     CHARLOTTE,
     CODY,
 )
+from tests.basic.schema import Animal, Cat, Dog, Owner
 
 JSON_DATABASE_PATH = Path(__file__).parent / "database"
 

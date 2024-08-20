@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from balloons import BalloonistFactory
-
-from tests.recursive.schema import CompositeFood, Food, SimpleFood
 from tests.recursive.objects import (
     APPLE,
     BANANA,
@@ -14,6 +12,7 @@ from tests.recursive.objects import (
     FRUIT_SALAD,
     VEGETABLE_SALAD,
 )
+from tests.recursive.schema import CompositeFood, Food, SimpleFood
 
 JSON_DATABASE_PATH = Path(__file__).parent / "database"
 
