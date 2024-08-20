@@ -493,7 +493,9 @@ class Balloonist(Generic[BL]):
 
         :param balloon: The balloon to track.
         """
-        type_ = type(balloon).Base
+        assert isinstance(balloon, NamedBalloon)
+        named_type = type(balloon)
+        type_ = named_type.Base
 
         tracked_type: type[Balloon] | None = self._namespace_manager.get(
             balloon.name, self._type
