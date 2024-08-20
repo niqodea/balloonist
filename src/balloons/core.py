@@ -355,7 +355,9 @@ class BalloonSpecialist(BalloonProvider[BLN], BalloonTracker[BLN]):
             return
 
         if balloon.name in self._names:
-            # We assume the stored balloon is the same as the provided one
+            stored_balloon = self.get(balloon.name)
+            assert balloon == stored_balloon
+            # We keep track of the input balloon to only have one object around
             self._balloons[balloon.name] = balloon
             return
 
