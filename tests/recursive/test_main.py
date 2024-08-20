@@ -34,7 +34,7 @@ def test_inflation(tmp_path: Path) -> None:
     apple = balloonist.get(APPLE.as_named().name)
     banana = balloonist.get(BANANA.as_named().name)
     carrot = balloonist.get(CARROT.as_named().name)
-    date = balloonist.get(DATE.name)
+    date = balloonist.get(DATE.as_named().name)
     assert apple == APPLE
     assert banana == BANANA
     assert carrot == CARROT
