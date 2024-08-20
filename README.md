@@ -82,15 +82,15 @@ This approach preserves object references and prevents data duplication.
 Storing objects with the balloons API is easy thanks to the `Balloonist` type:
 
 ```py
-# We now also specify names
+# We now also specify names to obtain named balloons
 abigail = Cat(size=Size(height=10, weight=5), purr_type="loud").to_named("abigail")
 bella = Dog(size=Size(height=25, weight=15) obedience=0.7).to_named("bella")
 carol = Owner(pets=[abigail, bella]).to_named("carol")
 
-# Assuming a balloonist object is in scope
-balloonist.track(abigail)
-balloonist.track(benjamin)
-balloonist.track(carol)
+# Assuming suitable balloonist objects are in scope
+animal_balloonist.track(abigail)
+animal_balloonist.track(benjamin)
+owner_balloonist.track(carol)
 ```
 
 with the resulting JSON files appearing in the database:
@@ -135,9 +135,9 @@ Here is how you can retrieve the objects, again using `Balloonist`:
 
 ```py
 # In another Python session...
-abigail = balloonist.get("abigail")
-bella = balloonist.get("bella")
-carol = balloonist.get("carol")
+abigail = animal_balloonist.get("abigail")
+bella = animal_balloonist.get("bella")
+carol = owner_balloonist.get("carol")
 
 assert isinstance(abigail, Cat)
 assert isinstance(bella, Dog)
