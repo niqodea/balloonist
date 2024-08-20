@@ -111,7 +111,9 @@ Value that can be dumped to JSON format.
 """
 
 F = TypeVar("F", bound="Field")
-Field: TypeAlias = dict[BLN, F] | set[BLN] | tuple[F, ...] | BL | BT | None
+Field: TypeAlias = (
+    dict[BLN, F] | dict[str, F] | set[BLN] | tuple[F, ...] | BL | BT | None
+)
 """
 Field of a balloon.
 """
