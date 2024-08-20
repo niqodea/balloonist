@@ -4,8 +4,8 @@ from pathlib import Path
 
 from balloons import BalloonistFactory
 
-from tests.basic.schema import Animal, Cat, Dog, NamedBalloon, Owner
-from tests.basic.struct import (
+from tests.basic.schema import Animal, Cat, Dog, Owner
+from tests.basic.objects import (
     ABIGAIL,
     ALEX,
     ALICE,
@@ -22,35 +22,35 @@ JSON_DATABASE_PATH = Path(__file__).parent / "database"
 
 def get_balloonist_factory(json_database_path: Path) -> BalloonistFactory:
     return BalloonistFactory.create(
-        top_namespace_types={NamedBalloon},
-        named_concrete_types={Cat, Dog, Owner},
-        anon_concrete_types={Animal.Size},
+        top_namespace_types={Animal, Owner},
+        types_={Animal, Animal.Size, Cat, Dog, Owner},
         json_database_path=json_database_path,
     )
 
 
 def test_inflation(tmp_path: Path) -> None:
     balloonist_factory = get_balloonist_factory(JSON_DATABASE_PATH)
-    balloonist = balloonist_factory.instantiate(NamedBalloon)
+    animal_balloonist = balloonist_factory.instantiate(Animal)
+    owner_balloonist = balloonist_factory.instantiate(Owner)
 
     # Cats
-    abigail = balloonist.get(ABIGAIL.name)
-    benjamin = balloonist.get(BENJAMIN.name)
-    charlotte = balloonist.get(CHARLOTTE.name)
+    abigail = animal_balloonist.get(ABIGAIL.as_named().name)
+    benjamin = animal_balloonist.get(BENJAMIN.as_named().name)
+    charlotte = animal_balloonist.get(CHARLOTTE.as_named().name)
     assert abigail == ABIGAIL
     assert benjamin == BENJAMIN
     assert charlotte == CHARLOTTE
     # Dogs
-    alex = balloonist.get(ALEX.name)
-    bella = balloonist.get(BELLA.name)
-    cody = balloonist.get(CODY.name)
+    alex = animal_balloonist.get(ALEX.as_named().name)
+    bella = animal_balloonist.get(BELLA.as_named().name)
+    cody = animal_balloonist.get(CODY.as_named().name)
     assert alex == ALEX
     assert bella == BELLA
     assert cody == CODY
     # Owners
-    alice = balloonist.get(ALICE.name)
-    bob = balloonist.get(BOB.name)
-    carol = balloonist.get(CAROL.name)
+    alice = owner_balloonist.get(ALICE.as_named().name)
+    bob = owner_balloonist.get(BOB.as_named().name)
+    carol = owner_balloonist.get(CAROL.as_named().name)
     assert alice == ALICE
     assert bob == BOB
     assert carol == CAROL
@@ -58,45 +58,46 @@ def test_inflation(tmp_path: Path) -> None:
 
 def test_consistency(tmp_path: Path) -> None:
     balloonist_factory = get_balloonist_factory(tmp_path)
-
-    balloonist = balloonist_factory.instantiate(NamedBalloon)
+    animal_balloonist = balloonist_factory.instantiate(Animal)
+    owner_balloonist = balloonist_factory.instantiate(Owner)
 
     # Cats
-    balloonist.track(ABIGAIL)
-    balloonist.track(BENJAMIN)
-    balloonist.track(CHARLOTTE)
+    animal_balloonist.track(ABIGAIL)
+    animal_balloonist.track(BENJAMIN)
+    animal_balloonist.track(CHARLOTTE)
     # Dogs
-    balloonist.track(ALEX)
-    balloonist.track(BELLA)
-    balloonist.track(CODY)
+    animal_balloonist.track(ALEX)
+    animal_balloonist.track(BELLA)
+    animal_balloonist.track(CODY)
     # Owners
-    balloonist.track(ALICE)
-    balloonist.track(BOB)
-    balloonist.track(CAROL)
+    owner_balloonist.track(ALICE)
+    owner_balloonist.track(BOB)
+    owner_balloonist.track(CAROL)
 
     # Simulate a new Python session by creating the objects again
 
     other_balloonist_factory = get_balloonist_factory(tmp_path)
-    other_balloonist = other_balloonist_factory.instantiate(NamedBalloon)
+    other_animal_balloonist = other_balloonist_factory.instantiate(Animal)
+    other_owner_balloonist = other_balloonist_factory.instantiate(Owner)
 
     # Cats
-    abigail = other_balloonist.get(ABIGAIL.name)
-    benjamin = other_balloonist.get(BENJAMIN.name)
-    charlotte = other_balloonist.get(CHARLOTTE.name)
+    abigail = other_animal_balloonist.get(ABIGAIL.as_named().name)
+    benjamin = other_animal_balloonist.get(BENJAMIN.as_named().name)
+    charlotte = other_animal_balloonist.get(CHARLOTTE.as_named().name)
     assert abigail == ABIGAIL
     assert benjamin == BENJAMIN
     assert charlotte == CHARLOTTE
     # Dogs
-    alex = other_balloonist.get(ALEX.name)
-    bella = other_balloonist.get(BELLA.name)
-    cody = other_balloonist.get(CODY.name)
+    alex = other_animal_balloonist.get(ALEX.as_named().name)
+    bella = other_animal_balloonist.get(BELLA.as_named().name)
+    cody = other_animal_balloonist.get(CODY.as_named().name)
     assert alex == ALEX
     assert bella == BELLA
     assert cody == CODY
     # Owners
-    alice = other_balloonist.get(ALICE.name)
-    bob = other_balloonist.get(BOB.name)
-    carol = other_balloonist.get(CAROL.name)
+    alice = other_owner_balloonist.get(ALICE.as_named().name)
+    bob = other_owner_balloonist.get(BOB.as_named().name)
+    carol = other_owner_balloonist.get(CAROL.as_named().name)
     assert alice == ALICE
     assert bob == BOB
     assert carol == CAROL

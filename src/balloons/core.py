@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, make_dataclass
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
     Generic,
     Mapping,
+    Self,
+    ClassVar,
     Protocol,
     TypeAlias,
     TypeVar,
@@ -14,29 +16,52 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from typing_extensions import dataclass_transform
 
 BasicType = int | float | str | bool
 """
 The type alias for JSON basic types.
 """
 
-B = TypeVar("B", bound=BasicType)
+BT = TypeVar("BT", bound=BasicType)
 
 
 @dataclass(frozen=True)
 class Balloon:
     """
-    The base class for balloons.
+    The top class for balloons.
     """
 
-    pass
+    def to_named(self, name: str) -> Self:
+        """
+        Promote the balloon to a named balloon.
+
+        :param name: The name of the balloon.
+        :return: The named balloon.
+        """
+        if isinstance(self, NamedBalloon):
+            raise ValueError(f"Balloon is already named: {self}")
+        named_type = type(self).Named
+        return named_type(name=name, **self.__dict__)  # type: ignore[return-value]
+
+    def as_named(self) -> NamedBalloon:
+        """
+        Treat the balloon as a named balloon.
+        """
+        assert isinstance(self, NamedBalloon)
+        return self
+
+    Named: ClassVar[type[NamedBalloon]]
+    """
+    The named type of the balloon class.
+    """
 
 
 # Ref: https://stackoverflow.com/questions/53990296
 @dataclass(frozen=True, eq=False)
 class NamedBalloon(Balloon):
     """
-    The base class for named balloons.
+    The marker class for named balloons.
     """
 
     name: str
@@ -45,34 +70,48 @@ class NamedBalloon(Balloon):
     """
 
     def __hash__(self) -> int:
-        return hash(f"{self.__class__.__qualname__}:{self.name}")
+        return hash(f"{type(self).Base.__qualname__}:{self.name}")
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, NamedBalloon):
-            return False
-        return hash(self) == hash(other)
-
-
-@dataclass(frozen=True)
-class AnonBalloon(Balloon):
+    Base: ClassVar[type[Balloon]]
     """
-    The base class for anonymous balloons.
+    The base type of the named balloon class.
     """
 
-    pass
+
+@dataclass_transform(frozen_default=True)
+def balloon(cls: type[Balloon]) -> type[Balloon]:
+    """
+    Decorator required to correctly setup balloon classes.
+    """
+
+    cls = dataclass(frozen=True)(cls)
+
+    named_cls: type[NamedBalloon] = make_dataclass(
+        cls_name=f"{cls.__name__}.Named",
+        fields=[],
+        bases=(NamedBalloon, cls),
+        frozen=True,
+        eq=False,
+    )
+
+    cls.Named = named_cls
+    named_cls.Base = cls
+
+    return cls
 
 
-S = TypeVar("S", bound=Balloon)
-NS = TypeVar("NS", bound=NamedBalloon)
+BL = TypeVar("BL", bound=Balloon)
+BLN = TypeVar("BLN", bound=NamedBalloon)
+
 
 J = TypeVar("J", bound="Json")
-Json: TypeAlias = dict[str, J] | list[J] | B | None
+Json: TypeAlias = dict[str, J] | list[J] | BT | None
 """
 Value that can be dumped to JSON format.
 """
 
 F = TypeVar("F", bound="Field")
-Field: TypeAlias = dict[NS, F] | set[NS] | tuple[F, ...] | S | B | None
+Field: TypeAlias = dict[BLN, F] | set[BLN] | tuple[F, ...] | BL | BT | None
 """
 Field of a balloon.
 """
@@ -85,7 +124,7 @@ class FieldDeflator:
 
     def __init__(
         self,
-        trackers: Mapping[type[NamedBalloon], BalloonTracker[NamedBalloon]],
+        trackers: Mapping[type[Balloon], BalloonTracker[NamedBalloon]],
     ) -> None:
         """
         :param trackers: The trackers of named balloons.
@@ -102,17 +141,17 @@ class FieldDeflator:
         if isinstance(value, Balloon):
             if isinstance(value, NamedBalloon):
                 named_type = value.__class__
-                tracker = self._trackers[named_type]
+                tracker = self._trackers[named_type.Base]
                 tracker.track(value)
-                return f"{named_type.__qualname__}:{value.name}"
-            if isinstance(value, AnonBalloon):
-                anon_type = value.__class__
+                return f"{named_type.Base.__qualname__}:{value.name}"
+            else:
+                type_ = value.__class__
                 fields = {
                     field_name: self.deflate(field)
                     for field_name, field in value.__dict__.items()
                 }
                 return {
-                    "type": anon_type.__qualname__,
+                    "type": type_.__qualname__,
                     "fields": fields,
                 }
             raise ValueError(f"Unsupported balloon type: {type(value)}")
@@ -141,19 +180,14 @@ class FieldInflator:
 
     def __init__(
         self,
-        named_concrete_types: Mapping[str, type[Balloon]],
-        anon_concrete_types: Mapping[str, type[Balloon]],
-        providers: Mapping[type[NamedBalloon], BalloonProvider[NamedBalloon]],
+        types_: dict[str, type[Balloon]],
+        providers: Mapping[type[Balloon], BalloonProvider[NamedBalloon]],
     ) -> None:
         """
-        :param named_concrete_types: The named balloon types that directly support
-            instantiation without relying on subtypes, indexed by their name.
-        :param anon_concrete_types: The anonymous balloon types that directly support
-            instantiation without relying on subtypes, indexed by their name.
+        :param types: The balloon types, indexed by their name.
         :param providers: The providers of named balloons.
         """
-        self._named_concrete_types = named_concrete_types
-        self._anon_concrete_types = anon_concrete_types
+        self._types = types_
         self._providers = providers
 
     def inflate(self, json_: Json, static_type: type[F]) -> F:
@@ -201,19 +235,16 @@ class FieldInflator:
             if isinstance(json_, str):
                 # it is a named balloon
                 type_name, _, name = json_.partition(":")
-                named_type = self._named_concrete_types[type_name]
-                assert issubclass(named_type, static_type)
-                assert issubclass(named_type, NamedBalloon)
-                provider = self._providers[named_type]
+                type_ = self._types[type_name]
+                assert issubclass(type_, static_type)
+                provider = self._providers[type_]
                 return provider.get(name)  # type: ignore[return-value]
             if isinstance(json_, dict):
-                # it is an anonymous balloon
                 type_name = json_["type"]
-                anon_type = self._anon_concrete_types[type_name]
-                assert issubclass(anon_type, static_type)
-                assert issubclass(anon_type, AnonBalloon)
+                type_ = self._types[type_name]
+                assert issubclass(type_, static_type)
                 fields = json_["fields"]
-                field_types = get_type_hints(anon_type)
+                field_types = get_type_hints(type_)
                 fields = {
                     field_name: self.inflate(
                         field_json,
@@ -221,7 +252,7 @@ class FieldInflator:
                     )
                     for field_name, field_json in fields.items()
                 }
-                return anon_type(**fields)  # type: ignore[return-value]
+                return type_(**fields)  # type: ignore[return-value]
             raise ValueError(f"Unsupported balloon json: {json_}")
 
         if issubclass(static_type, BasicType):  # type: ignore[arg-type,misc]
@@ -234,12 +265,12 @@ class FieldInflator:
 # NOTE: Ignoring mypy misc below as it otherwise complains that NM must be covariant
 
 
-class BalloonProvider(Protocol[NS]):  # type: ignore[misc]
+class BalloonProvider(Protocol[BLN]):  # type: ignore[misc]
     """
     Provides named balloons of a balloon type, not including subtypes.
     """
 
-    def get(self, name: str) -> NS:
+    def get(self, name: str) -> BLN:
         """
         Provide a named balloon.
 
@@ -248,12 +279,12 @@ class BalloonProvider(Protocol[NS]):  # type: ignore[misc]
         """
 
 
-class BalloonTracker(Protocol[NS]):  # type: ignore[misc]
+class BalloonTracker(Protocol[BLN]):  # type: ignore[misc]
     """
     Tracks named balloons of a balloon type, not including subtypes.
     """
 
-    def track(self, balloon: NS) -> None:
+    def track(self, balloon: BLN) -> None:
         """
         Track a named balloon.
 
@@ -261,14 +292,14 @@ class BalloonTracker(Protocol[NS]):  # type: ignore[misc]
         """
 
 
-class BalloonSpecialist(BalloonProvider[NS], BalloonTracker[NS]):
+class BalloonSpecialist(BalloonProvider[BLN], BalloonTracker[BLN]):
     """
     Manages named balloons of a balloon type, not including subtypes.
     """
 
     def __init__(
         self,
-        type_: type[NS],
+        type_: type[BLN],
         names: set[str],
         inflator: FieldInflator,
         deflator: FieldDeflator,
@@ -290,7 +321,7 @@ class BalloonSpecialist(BalloonProvider[NS], BalloonTracker[NS]):
 
         self._balloons: dict[str, NamedBalloon] = {}
 
-    def get(self, name: str) -> NS:
+    def get(self, name: str) -> BLN:
         if name not in self._names:
             raise ValueError(f"Could not find balloon with name: {name}")
 
@@ -313,7 +344,7 @@ class BalloonSpecialist(BalloonProvider[NS], BalloonTracker[NS]):
         self._balloons[name] = balloon
         return balloon
 
-    def track(self, balloon: NS) -> None:
+    def track(self, balloon: BLN) -> None:
         if type(balloon) is not self._type:
             raise ValueError(f"Could not handle type: {type(balloon)}")
 
@@ -362,9 +393,9 @@ class NamespaceManager:
             respective namespaces.
         """
         self._top_namespace_types = top_namespace_types
-        self._name_to_types: dict[str, set[type[NamedBalloon]]] = {}
+        self._name_to_types: dict[str, set[type[Balloon]]] = {}
 
-    def get(self, name: str, namespace_type: type[NS]) -> type[NS] | None:
+    def get(self, name: str, namespace_type: type[BL]) -> type[BL] | None:
         """
         Provide the type of the balloon with the given name, if any.
 
@@ -388,7 +419,7 @@ class NamespaceManager:
         type_ = candidate_types.pop()
         return type_
 
-    def track(self, name: str, type_: type[NamedBalloon]) -> None:
+    def track(self, name: str, type_: type[Balloon]) -> None:
         """
         Track a balloon by name and type.
 
@@ -418,16 +449,16 @@ class NamespaceManager:
         self._name_to_types[name].add(type_)
 
 
-class Balloonist(Generic[NS]):
+class Balloonist(Generic[BL]):
     """
     Manages named balloons of a balloon type, including subtypes.
     """
 
     def __init__(
         self,
-        type_: type[NS],
+        type_: type[BL],
         namespace_manager: NamespaceManager,
-        balloon_specialists: Mapping[type[NS], BalloonSpecialist[NS]],
+        balloon_specialists: dict[type[Balloon], BalloonSpecialist[NamedBalloon]],
     ) -> None:
         """
         :param type_: The type of the managed balloons.
@@ -438,7 +469,7 @@ class Balloonist(Generic[NS]):
         self._namespace_manager = namespace_manager
         self._balloon_specialists = balloon_specialists
 
-    def get(self, name: str) -> NS:
+    def get(self, name: str) -> BL:
         """
         Provide the balloon with the given name, possibly inflating it from the JSON
         database if missing from memory.
@@ -446,27 +477,31 @@ class Balloonist(Generic[NS]):
         :param name: The balloon name.
         :return: The balloon.
         """
-        if (type_ := self._namespace_manager.get(name, self._type)) is None:
+        type_: type[Balloon] | None = self._namespace_manager.get(name, self._type)
+        if type_ is None:
             raise ValueError(f"Could not find balloon with name: {name}")
 
-        balloon_specialist = self._balloon_specialists[type_]
-        return balloon_specialist.get(name)
+        balloon_specialist = self._balloon_specialists[type_]  # type: ignore[index]
+        return balloon_specialist.get(name)  # type: ignore[return-value]
 
-    def track(self, balloon: NS) -> None:
+    def track(self, balloon: BLN) -> None:
         """
         Track a balloon, possibly deflating it to the JSON database if missing from
         disk.
 
         :param balloon: The balloon to track.
         """
-        if (
-            tracked_type := self._namespace_manager.get(balloon.name, self._type)
-        ) is not None:
-            assert type(balloon) is tracked_type
+        type_ = type(balloon).Base
 
-        balloon_specialist = self._balloon_specialists[type(balloon)]
+        tracked_type: type[Balloon] | None = self._namespace_manager.get(
+            balloon.name, self._type
+        )
+        if tracked_type is not None:
+            assert type_ is tracked_type
+
+        balloon_specialist = self._balloon_specialists[type_]
         balloon_specialist.track(balloon)
-        self._namespace_manager.track(balloon.name, type(balloon))
+        self._namespace_manager.track(balloon.name, type_)
 
     def get_names(self) -> set[str]:
         """
@@ -480,7 +515,7 @@ class Balloonist(Generic[NS]):
         return names
 
 
-class BalloonistFactory(Generic[NS]):
+class BalloonistFactory(Generic[BL]):
     """
     Factory for balloonists.
     """
@@ -488,7 +523,7 @@ class BalloonistFactory(Generic[NS]):
     def __init__(
         self,
         namespace_types: set[type[Balloon]],
-        balloon_specialists: Mapping[type[NS], BalloonSpecialist[NS]],
+        balloon_specialists: dict[type[Balloon], BalloonSpecialist[NamedBalloon]],
         namespace_manager: NamespaceManager,
     ) -> None:
         """
@@ -500,7 +535,7 @@ class BalloonistFactory(Generic[NS]):
         self._balloon_specialists = balloon_specialists
         self._namespace_manager = namespace_manager
 
-    def instantiate(self, type_: type[NS]) -> Balloonist[NS]:
+    def instantiate(self, type_: type[BL]) -> Balloonist[BL]:
         """
         Instantiate a balloonist for a balloon type
 
@@ -510,8 +545,8 @@ class BalloonistFactory(Generic[NS]):
         if all(not issubclass(type_, t) for t in self._namespace_types):
             raise ValueError(f"Unsupported balloonist balloon type: {type_}")
 
-        balloon_specialists = {
-            t: sm for t, sm in self._balloon_specialists.items() if issubclass(t, type_)
+        balloon_specialists: dict[type[Balloon], BalloonSpecialist[NamedBalloon]] = {
+            t: bs for t, bs in self._balloon_specialists.items() if issubclass(t, type_)
         }
 
         return Balloonist(
@@ -523,8 +558,7 @@ class BalloonistFactory(Generic[NS]):
     @staticmethod
     def create(
         top_namespace_types: set[type[Balloon]],
-        named_concrete_types: set[type[NamedBalloon]],
-        anon_concrete_types: set[type[AnonBalloon]],
+        types_: set[type[Balloon]],
         json_database_path: Path,
     ) -> BalloonistFactory:
         """
@@ -532,31 +566,27 @@ class BalloonistFactory(Generic[NS]):
 
         :param top_namespace_types: The balloon types that define the top of their
             respective namespaces.
-        :param named_concrete_types: The named balloon types that directly support
-            instantiation without relying on subtypes.
-        :param anon_concrete_types: The anonymous balloon types that directly support
-            instantiation without relying on subtypes.
+        :param types_: The balloon types.
         :param json_database_path: The path to the JSON database.
         :return: The factory for balloonists.
         """
-        balloon_specialists: dict[
-            type[NamedBalloon], BalloonSpecialist[NamedBalloon]
-        ] = {}
+        balloon_specialists: dict[type[Balloon], BalloonSpecialist[NamedBalloon]] = {}
 
         field_deflator = FieldDeflator(
             trackers=balloon_specialists,
         )
         field_inflator = FieldInflator(
-            named_concrete_types={t.__qualname__: t for t in named_concrete_types},
-            anon_concrete_types={t.__qualname__: t for t in anon_concrete_types},
+            types_={t.__qualname__: t for t in types_},
             providers=balloon_specialists,
         )
-        for named_concrete_type in named_concrete_types:
-            jsons_path = json_database_path / named_concrete_type.__qualname__
+        for type_ in types_:
+            if not any(issubclass(type_, t) for t in top_namespace_types):
+                continue
+            jsons_path = json_database_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
-            balloon_specialists[named_concrete_type] = BalloonSpecialist(
-                type_=named_concrete_type,
+            balloon_specialists[type_] = BalloonSpecialist(
+                type_=type_.Named,
                 names=names,
                 inflator=field_inflator,
                 deflator=field_deflator,

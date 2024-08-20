@@ -68,14 +68,11 @@ Additionally, if you want to deserialize their contents back to their runtime eq
 
 ### Proposed approach
 
-balloons introduces the `Balloon`, `NamedBalloon` and `AnonBalloon` base classes.
+balloons introduces the `Balloon` and `NamedBalloon` base classes.
 
 * `Balloon` objects are frozen dataclass objects that can be handled by the balloons API for deflation and inflation.
-  Both `NamedBalloon` and `AnonBalloon` are subclasses of `Balloon`.
-* `NamedBalloon` objects always include a `name` field that acts as the identifier of the object within all objects of its class.
-* `AnonBalloon` objects do not require a `name` field.
-
-The balloons library keeps track of `NamedBalloon` objects by deflating their values as JSONs and storing them as files.
+* `NamedBalloon` objects also include a `name` field that acts as the identifier of the object within all objects of its class.
+   Every `Balloon` object can be promoted to a `NamedBalloon` with the `to_named` method.
 
 The library deflates `NamedBalloon` objects into JSON files, storing them efficiently for easy future inflation.
 The serialization includes class names, enabling correct instantiation.
@@ -85,10 +82,10 @@ This approach preserves object references and prevents data duplication.
 Storing objects with the balloons API is easy thanks to the `Balloonist` type:
 
 ```py
-# We now also specify names, since these extend NamedBalloon
-abigail = Cat(name="abigail", size=Size(height=10, weight=5), purr_type="loud")
-bella = Dog(name="bella", size=Size(height=25, weight=15) obedience=0.7)
-carol = Owner(name="carol", pets=[abigail, bella])
+# We now also specify names
+abigail = Cat(size=Size(height=10, weight=5), purr_type="loud").to_named("abigail")
+bella = Dog(size=Size(height=25, weight=15) obedience=0.7).to_named("bella")
+carol = Owner(pets=[abigail, bella]).to_named("carol")
 
 # Assuming a balloonist object is in scope
 balloonist.track(abigail)

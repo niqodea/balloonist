@@ -2,29 +2,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from balloons import AnonBalloon, NamedBalloon
+from balloons import Balloon, balloon
 
 
-@dataclass(frozen=True, eq=False)
-class Animal(NamedBalloon):
+@balloon
+class Animal(Balloon):
     size: Size
 
     @dataclass(frozen=True)
-    class Size(AnonBalloon):
+    class Size(Balloon):
         height: int
         weight: int
 
 
-@dataclass(frozen=True, eq=False)
+@balloon
 class Cat(Animal):
     purr_type: str | None
 
 
-@dataclass(frozen=True, eq=False)
+@balloon
 class Dog(Animal):
     obedience: float
 
 
-@dataclass(frozen=True, eq=False)
-class Owner(NamedBalloon):
+@balloon
+class Owner(Balloon):
     pet_nicknames: dict[Animal, str]

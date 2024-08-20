@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from balloons import NamedBalloon
+from balloons import Balloon, balloon
 
 
-@dataclass(frozen=True)
-class Food(NamedBalloon): ...
+@balloon
+class Food(Balloon): ...
 
 
-@dataclass(frozen=True)
+@balloon
 class SimpleFood(Food):
     calories: int
 
 
-@dataclass(frozen=True)
+@balloon
 class CompositeFood(Food):
     ingredients: set[Food]
