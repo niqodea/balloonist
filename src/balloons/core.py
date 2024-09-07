@@ -87,13 +87,18 @@ def balloon(cls: type[Balloon]) -> type[Balloon]:
 
     cls = dataclass(frozen=True)(cls)
 
-    named_cls: type[NamedBalloon] = make_dataclass(
-        cls_name=f"{cls.__name__}.Named",
-        fields=[],
-        bases=(NamedBalloon, cls),
-        frozen=True,
-        eq=False,
-    )
+    if issubclass(cls, NamedBalloon):
+        # It makes sense to define some classes as only having named instances
+        # It also enables safe usage of instances as dictionary keys
+        named_cls = cls
+    else:
+        named_cls = make_dataclass(
+            cls_name=f"{cls.__name__}.Named",
+            fields=[],
+            bases=(NamedBalloon, cls),
+            frozen=True,
+            eq=False,
+        )
 
     cls.Named = named_cls
     named_cls.Base = cls
