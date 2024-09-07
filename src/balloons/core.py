@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, make_dataclass
+from enum import Enum
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
@@ -18,13 +19,6 @@ from typing import (
 )
 
 from typing_extensions import dataclass_transform
-
-BasicType = int | float | str | bool
-"""
-The type alias for JSON basic types.
-"""
-
-BT = TypeVar("BT", bound=BasicType)
 
 
 @dataclass(frozen=True)
@@ -106,22 +100,38 @@ def balloon(cls: type[Balloon]) -> type[Balloon]:
     return cls
 
 
+BasicType = int | float | str | bool
+"""
+The type alias for JSON basic types.
+"""
+
 BL = TypeVar("BL", bound=Balloon)
 BLN = TypeVar("BLN", bound=NamedBalloon)
+E = TypeVar("E", bound=Enum)
+BT = TypeVar("BT", bound=BasicType)
 
+F = TypeVar("F", bound="Field")
+Field: TypeAlias = (
+    None
+    | dict[BLN, F]
+    | dict[E, F]
+    | dict[str, F]
+    | set[BLN]
+    | set[E]
+    | set[str]
+    | tuple[F, ...]
+    | BL
+    | E
+    | BT
+)
+"""
+Field of a balloon.
+"""
 
 J = TypeVar("J", bound="Json")
 Json: TypeAlias = dict[str, J] | list[J] | BT | None
 """
 Value that can be dumped to JSON format.
-"""
-
-F = TypeVar("F", bound="Field")
-Field: TypeAlias = (
-    dict[BLN, F] | dict[str, F] | set[BLN] | tuple[F, ...] | BL | BT | None
-)
-"""
-Field of a balloon.
 """
 
 
@@ -171,6 +181,9 @@ class FieldDeflator:
 
         if isinstance(value, (set, tuple)):
             return [self.deflate(item) for item in value]
+
+        if isinstance(value, Enum):
+            return f"{value.name}"
 
         if isinstance(value, BasicType):  # type: ignore[arg-type,misc]
             return value
@@ -262,6 +275,10 @@ class FieldInflator:
                 }
                 return type_(**fields)  # type: ignore[return-value]
             raise ValueError(f"Unsupported balloon json: {json_}")
+
+        if issubclass(static_type, Enum):
+            assert isinstance(json_, str)
+            return static_type[json_]  # type: ignore[return-value]
 
         if issubclass(static_type, BasicType):  # type: ignore[arg-type,misc]
             assert isinstance(json_, static_type)
