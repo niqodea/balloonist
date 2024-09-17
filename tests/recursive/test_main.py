@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from balloons import DynamicBalloonDatabase
+from balloons import ClosedBalloonWorld
 from tests.recursive.objects import (
     APPLE,
     BANANA,
@@ -14,35 +14,31 @@ from tests.recursive.objects import (
 )
 from tests.recursive.schema import CompositeFood, Food, SimpleFood
 
-JSON_DATABASE_PATH = Path(__file__).parent / "database"
+DATABASE_PATH = Path(__file__).parent / "database"
 
-
-def get_balloonist_factory(json_database_path: Path) -> DynamicBalloonDatabase:
-    return DynamicBalloonDatabase.create(
-        top_namespace_types={Food},
-        types_={Food, SimpleFood, CompositeFood},
-        json_database_path=json_database_path,
-    )
+BASE_WORLD = ClosedBalloonWorld.create(
+    namespace_types={Food},
+    types_={Food, SimpleFood, CompositeFood},
+)
 
 
 def test_inflation(tmp_path: Path) -> None:
-    balloonist_factory = get_balloonist_factory(JSON_DATABASE_PATH)
-
-    balloonist = balloonist_factory.instantiate(Food)
+    world = BASE_WORLD.populate(DATABASE_PATH)
+    food_provider = world.get_provider(Food)
 
     # Simple
-    apple = balloonist.get(APPLE.as_named().name)
-    banana = balloonist.get(BANANA.as_named().name)
-    carrot = balloonist.get(CARROT.as_named().name)
-    date = balloonist.get(DATE.as_named().name)
+    apple = food_provider.get(APPLE.as_named().name)
+    banana = food_provider.get(BANANA.as_named().name)
+    carrot = food_provider.get(CARROT.as_named().name)
+    date = food_provider.get(DATE.as_named().name)
     assert apple == APPLE
     assert banana == BANANA
     assert carrot == CARROT
     assert date == DATE
     # Composite
-    fruit_salad = balloonist.get(FRUIT_SALAD.as_named().name)
-    vegetable_salad = balloonist.get(VEGETABLE_SALAD.as_named().name)
-    fruit_and_vegetable_salad = balloonist.get(
+    fruit_salad = food_provider.get(FRUIT_SALAD.as_named().name)
+    vegetable_salad = food_provider.get(VEGETABLE_SALAD.as_named().name)
+    fruit_and_vegetable_salad = food_provider.get(
         FRUIT_AND_VEGETABLE_SALAD.as_named().name
     )
     assert fruit_salad == FRUIT_SALAD
@@ -51,37 +47,37 @@ def test_inflation(tmp_path: Path) -> None:
 
 
 def test_consistency(tmp_path: Path) -> None:
-    balloonist_factory = get_balloonist_factory(tmp_path)
-    balloonist = balloonist_factory.instantiate(Food)
+    world = BASE_WORLD.to_open(tmp_path)
+    food_tracker = world.get_tracker(Food)
 
     # Simple
-    balloonist.track(APPLE)
-    balloonist.track(BANANA)
-    balloonist.track(CARROT)
-    balloonist.track(DATE)
+    food_tracker.track(APPLE)
+    food_tracker.track(BANANA)
+    food_tracker.track(CARROT)
+    food_tracker.track(DATE)
     # Composite
-    balloonist.track(FRUIT_SALAD)
-    balloonist.track(VEGETABLE_SALAD)
-    balloonist.track(FRUIT_AND_VEGETABLE_SALAD)
+    food_tracker.track(FRUIT_SALAD)
+    food_tracker.track(VEGETABLE_SALAD)
+    food_tracker.track(FRUIT_AND_VEGETABLE_SALAD)
 
     # Simulate a new Python session by creating the objects again
 
-    other_balloonist_factory = get_balloonist_factory(tmp_path)
-    other_balloonist = other_balloonist_factory.instantiate(Food)
+    other_world = BASE_WORLD.populate(DATABASE_PATH)
+    food_provider = other_world.get_provider(Food)
 
     # Simple
-    apple = other_balloonist.get(APPLE.as_named().name)
-    banana = other_balloonist.get(BANANA.as_named().name)
-    carrot = other_balloonist.get(CARROT.as_named().name)
-    date = other_balloonist.get(DATE.as_named().name)
+    apple = food_provider.get(APPLE.as_named().name)
+    banana = food_provider.get(BANANA.as_named().name)
+    carrot = food_provider.get(CARROT.as_named().name)
+    date = food_provider.get(DATE.as_named().name)
     assert apple == APPLE
     assert banana == BANANA
     assert carrot == CARROT
     assert date == DATE
     # Composite
-    fruit_salad = other_balloonist.get(FRUIT_SALAD.as_named().name)
-    vegetable_salad = other_balloonist.get(VEGETABLE_SALAD.as_named().name)
-    fruit_and_vegetable_salad = other_balloonist.get(
+    fruit_salad = food_provider.get(FRUIT_SALAD.as_named().name)
+    vegetable_salad = food_provider.get(VEGETABLE_SALAD.as_named().name)
+    fruit_and_vegetable_salad = food_provider.get(
         FRUIT_AND_VEGETABLE_SALAD.as_named().name
     )
     assert fruit_salad == FRUIT_SALAD

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from balloons import Balloon, balloon
 
 
@@ -9,7 +7,7 @@ from balloons import Balloon, balloon
 class Animal(Balloon):
     size: Size
 
-    @dataclass(frozen=True)
+    @balloon
     class Size(Balloon):
         height: int
         weight: int

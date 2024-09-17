@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from balloons import DynamicBalloonDatabase
+from balloons import ClosedBalloonWorld
 from tests.basic.objects import (
     ABIGAIL,
     ALEX,
@@ -16,87 +16,84 @@ from tests.basic.objects import (
 )
 from tests.basic.schema import Animal, Cat, Dog, Owner
 
-JSON_DATABASE_PATH = Path(__file__).parent / "database"
+DATABASE_PATH = Path(__file__).parent / "database"
 
-
-def get_balloonist_factory(json_database_path: Path) -> DynamicBalloonDatabase:
-    return DynamicBalloonDatabase.create(
-        top_namespace_types={Animal, Owner},
-        types_={Animal, Animal.Size, Cat, Dog, Owner},
-        json_database_path=json_database_path,
-    )
+BASE_WORLD = ClosedBalloonWorld.create(
+    namespace_types={Animal, Owner},
+    types_={Animal, Animal.Size, Cat, Dog, Owner},
+)
 
 
 def test_inflation(tmp_path: Path) -> None:
-    balloonist_factory = get_balloonist_factory(JSON_DATABASE_PATH)
-    animal_balloonist = balloonist_factory.instantiate(Animal)
-    owner_balloonist = balloonist_factory.instantiate(Owner)
+    world = BASE_WORLD.populate(DATABASE_PATH)
+    animal_provider = world.get_provider(Animal)
+    owner_provider = world.get_provider(Owner)
 
     # Cats
-    abigail = animal_balloonist.get(ABIGAIL.as_named().name)
-    benjamin = animal_balloonist.get(BENJAMIN.as_named().name)
-    charlotte = animal_balloonist.get(CHARLOTTE.as_named().name)
+    abigail = animal_provider.get(ABIGAIL.as_named().name)
+    benjamin = animal_provider.get(BENJAMIN.as_named().name)
+    charlotte = animal_provider.get(CHARLOTTE.as_named().name)
     assert abigail == ABIGAIL
     assert benjamin == BENJAMIN
     assert charlotte == CHARLOTTE
     # Dogs
-    alex = animal_balloonist.get(ALEX.as_named().name)
-    bella = animal_balloonist.get(BELLA.as_named().name)
-    cody = animal_balloonist.get(CODY.as_named().name)
+    alex = animal_provider.get(ALEX.as_named().name)
+    bella = animal_provider.get(BELLA.as_named().name)
+    cody = animal_provider.get(CODY.as_named().name)
     assert alex == ALEX
     assert bella == BELLA
     assert cody == CODY
     # Owners
-    alice = owner_balloonist.get(ALICE.as_named().name)
-    bob = owner_balloonist.get(BOB.as_named().name)
-    carol = owner_balloonist.get(CAROL.as_named().name)
+    alice = owner_provider.get(ALICE.as_named().name)
+    bob = owner_provider.get(BOB.as_named().name)
+    carol = owner_provider.get(CAROL.as_named().name)
     assert alice == ALICE
     assert bob == BOB
     assert carol == CAROL
 
 
 def test_consistency(tmp_path: Path) -> None:
-    balloonist_factory = get_balloonist_factory(tmp_path)
-    animal_balloonist = balloonist_factory.instantiate(Animal)
-    owner_balloonist = balloonist_factory.instantiate(Owner)
+    world = BASE_WORLD.to_open(tmp_path)
+    animal_tracker = world.get_tracker(Animal)
+    owner_tracker = world.get_tracker(Owner)
 
     # Cats
-    animal_balloonist.track(ABIGAIL)
-    animal_balloonist.track(BENJAMIN)
-    animal_balloonist.track(CHARLOTTE)
+    animal_tracker.track(ABIGAIL)
+    animal_tracker.track(BENJAMIN)
+    animal_tracker.track(CHARLOTTE)
     # Dogs
-    animal_balloonist.track(ALEX)
-    animal_balloonist.track(BELLA)
-    animal_balloonist.track(CODY)
+    animal_tracker.track(ALEX)
+    animal_tracker.track(BELLA)
+    animal_tracker.track(CODY)
     # Owners
-    owner_balloonist.track(ALICE)
-    owner_balloonist.track(BOB)
-    owner_balloonist.track(CAROL)
+    owner_tracker.track(ALICE)
+    owner_tracker.track(BOB)
+    owner_tracker.track(CAROL)
 
     # Simulate a new Python session by creating the objects again
 
-    other_balloonist_factory = get_balloonist_factory(tmp_path)
-    other_animal_balloonist = other_balloonist_factory.instantiate(Animal)
-    other_owner_balloonist = other_balloonist_factory.instantiate(Owner)
+    other_world = BASE_WORLD.populate(tmp_path)
+    animal_provider = other_world.get_provider(Animal)
+    owner_provider = other_world.get_provider(Owner)
 
     # Cats
-    abigail = other_animal_balloonist.get(ABIGAIL.as_named().name)
-    benjamin = other_animal_balloonist.get(BENJAMIN.as_named().name)
-    charlotte = other_animal_balloonist.get(CHARLOTTE.as_named().name)
+    abigail = animal_provider.get(ABIGAIL.as_named().name)
+    benjamin = animal_provider.get(BENJAMIN.as_named().name)
+    charlotte = animal_provider.get(CHARLOTTE.as_named().name)
     assert abigail == ABIGAIL
     assert benjamin == BENJAMIN
     assert charlotte == CHARLOTTE
     # Dogs
-    alex = other_animal_balloonist.get(ALEX.as_named().name)
-    bella = other_animal_balloonist.get(BELLA.as_named().name)
-    cody = other_animal_balloonist.get(CODY.as_named().name)
+    alex = animal_provider.get(ALEX.as_named().name)
+    bella = animal_provider.get(BELLA.as_named().name)
+    cody = animal_provider.get(CODY.as_named().name)
     assert alex == ALEX
     assert bella == BELLA
     assert cody == CODY
     # Owners
-    alice = other_owner_balloonist.get(ALICE.as_named().name)
-    bob = other_owner_balloonist.get(BOB.as_named().name)
-    carol = other_owner_balloonist.get(CAROL.as_named().name)
+    alice = owner_provider.get(ALICE.as_named().name)
+    bob = owner_provider.get(BOB.as_named().name)
+    carol = owner_provider.get(CAROL.as_named().name)
     assert alice == ALICE
     assert bob == BOB
     assert carol == CAROL

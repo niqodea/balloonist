@@ -137,7 +137,6 @@ Value that can be inflated or dumped to JSON.
 """
 
 
-
 class Inflator:
     """
     Inflates values from their JSON representations.
@@ -313,7 +312,7 @@ class BalloonDatabaseCache(Generic[BN]):
         Get the names of the cached balloons.
         """
         return set(self._balloons.keys())
-    
+
     def get_all_names(self) -> set[str]:
         """
         Get the names of all balloons in the database.
@@ -329,9 +328,9 @@ class BalloonDatabaseCache(Generic[BN]):
         if name not in self._names:
             raise ValueError(f"Could not find balloon with name: {name}")
 
-        return self._cached_balloons[name]
+        return self._balloons[name]
 
-    def track(balloon: BN) -> None:
+    def track(self, balloon: BN) -> None:
         """
         Track a balloon in the stand.
 
@@ -342,12 +341,11 @@ class BalloonDatabaseCache(Generic[BN]):
 
         if balloon.name in self._balloons:
             raise ValueError(f"Balloon already in cache: {balloon.name}")
-        
+
         if balloon.name not in self._names:
             self._names.add(balloon.name)
 
         self._balloons[balloon.name] = balloon
-
 
 
 class SpecializedBalloonProvider(Protocol[BN]):  # type: ignore[misc]
@@ -378,19 +376,19 @@ class SpecializedBalloonProvider(Protocol[BN]):  # type: ignore[misc]
         """
 
 
-class EmptySpecializedBalloonProvider(SpecializedBalloonProvider[NoReturn]):
+class EmptySpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
     """
     The specialized balloon provider with no balloons.
     """
+
     def get(self, name: str) -> NoReturn:
         raise ValueError(f"Could not find balloon with name: {name}")
 
     def get_names(self) -> set[str]:
         return set()
-    
-    def get_type(self) -> type[NoReturn]:
-        return NoReturn
 
+    def get_type(self) -> type[NoReturn]:
+        return NoReturn  # type: ignore[return-value]
 
 
 class StandardSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
@@ -420,14 +418,14 @@ class StandardSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
         self._inflator = inflator
 
     def get(self, name: str) -> BN:
-        if name not in self._cache.get_all_names():
-            if self._baseline_provider is not None:
-                return self._baseline_provider.get(name)
-            else:
-                raise ValueError(f"Could not find balloon with name: {name}")
+        if name in self._baseline_provider.get_names():
+            return self._baseline_provider.get(name)
 
         if name in self._cache.get_cached_names():
             return self._cache.get(name)
+
+        if name not in self._cache.get_all_names():
+            raise ValueError(f"Could not find balloon with name: {name}")
 
         json_path = self._jsons_path / f"{name}.json"
         json_ = json.loads(json_path.read_text())
@@ -479,7 +477,7 @@ class SpecializedBalloonTracker(Generic[BN]):
         self._cache = cache
         self._baseline_provider = baseline_provider
         self._inflator = inflator
-        self_deflator = deflator
+        self._deflator = deflator
 
     def track(self, balloon: BN) -> None:
         """
@@ -487,18 +485,52 @@ class SpecializedBalloonTracker(Generic[BN]):
 
         :param balloon: The balloon to track.
         """
-        if type(balloon) is not self._reference_provider.get_type():
+        if type(balloon) is not self._type:
             raise ValueError(f"Could not handle type: {type(balloon)}")
 
-        if (existing_balloon := self._reference_provider.get(balloon.name)) is not None:
-            if balloon == existing_balloon:
+        # NOTE: We check with `is`, but we could also check with `==` to be less strict
+        if balloon.name in self._baseline_provider.get_names():
+            baseline_balloon = self._baseline_provider.get(balloon.name)
+            if balloon is baseline_balloon:
                 return
-            else:
-                raise ValueError(
-                    f"Found conflicting balloon with name: {balloon.name}\n"
-                    f"Existing balloon: {existing_balloon}\n"
-                    f"New balloon: {balloon}"
+            raise ValueError(
+                "Found two balloons in memory with same type and name\n"
+                f"Type: {self._type}\n"
+                f"Name: {balloon.name}"
+            )
+
+        if balloon.name in self._cache.get_cached_names():
+            cached_balloon = self._cache.get(balloon.name)
+            if balloon is cached_balloon:
+                return
+            raise ValueError(
+                "Found two balloons in memory with same type and name\n"
+                f"Type: {self._type}\n"
+                f"Name: {balloon.name}"
+            )
+
+        json_path = self._jsons_path / f"{balloon.name}.json"
+
+        if balloon.name in self._cache.get_all_names():
+            json_ = json.loads(json_path.read_text())
+            field_types = get_type_hints(self._type)
+            init_kwargs = {"name": balloon.name} | {
+                field_name: self._inflator.inflate(
+                    deflated_value=deflated_field,
+                    static_type=field_types[field_name],
                 )
+                for field_name, deflated_field in json_.items()
+            }
+            stored_balloon = self._type(**init_kwargs)
+
+            if balloon == stored_balloon:
+                return
+
+            raise ValueError(
+                f"Found conflict between in-memory and stored balloons.\n"
+                f"In-memory balloon: {balloon}\n"
+                f"Stored balloon:    {stored_balloon}"
+            )
 
         fields = {n: v for n, v in balloon.__dict__.items()}
         fields.pop("name")
@@ -507,8 +539,8 @@ class SpecializedBalloonTracker(Generic[BN]):
             for field_name, field in fields.items()
         }
 
-        json_path = self._jsons_path / f"{balloon.name}.json"
         json_path.write_text(json.dumps(json_, indent=2))
+        self._cache.track(balloon)
 
 
 class DynamicTypeProvider(Protocol):
@@ -524,6 +556,7 @@ class DynamicTypeProvider(Protocol):
         :param static_type: Static type of the balloon.
         :return: Dynamic type of the balloon, if any.
         """
+
 
 class DynamicTypeTracker(Protocol):
     """
@@ -558,14 +591,14 @@ class DynamicTypeManager(DynamicTypeProvider, DynamicTypeTracker):
     def __init__(
         self,
         namespace_types: set[type[Balloon]],
-        base_provider: DynamicTypeProvider = EmptyDynamicTypeProvider(),
+        baseline_provider: DynamicTypeProvider,
     ) -> None:
         """
-        :param namespace_types: The balloon types that define a namespace.
-        :param base_provider: The base provider of dynamic types.
+        :param namespace_types: Balloon types that define a namespace.
+        :param baseline_provider: Base provider of dynamic types.
         """
         self._namespace_types = namespace_types
-        self._base_provider = base_provider
+        self._baseline_provider = baseline_provider
 
         self._name_to_dynamic_types: dict[str, set[type[Balloon]]] = defaultdict(set)
 
@@ -575,10 +608,12 @@ class DynamicTypeManager(DynamicTypeProvider, DynamicTypeTracker):
 
         dynamic_types = self._name_to_dynamic_types[name]
 
-        candidate_dynamic_types = {t for t in dynamic_types if issubclass(t, static_type)}
+        candidate_dynamic_types = {
+            t for t in dynamic_types if issubclass(t, static_type)
+        }
 
         if len(candidate_dynamic_types) == 0:
-            return self._base_provider.get(name, static_type)
+            return self._baseline_provider.get(name, static_type)
 
         if len(candidate_dynamic_types) > 1:
             raise ValueError(f"Found multiple balloons with name: {name}")
@@ -590,18 +625,15 @@ class DynamicTypeManager(DynamicTypeProvider, DynamicTypeTracker):
         if self.get(name, dynamic_type) is dynamic_type:
             return
 
-        relevant_namespace_types = {
-            t for t in self._namespace_types if issubclass(dynamic_type, t)
-        }
         for namespace_type in self._namespace_types:
             if not issubclass(dynamic_type, namespace_type):
                 continue
 
             if (existing_dynamic_type := self.get(name, namespace_type)) is not None:
                 raise ValueError(
-                    "Found balloon with same name in different namespaces.\n"
-                    f"Name: {name}\n"
+                    "Found balloon type conflict in a namespace.\n"
                     f"Namespace type: {namespace_type}\n"
+                    f"Name: {name}\n"
                     f"Existing type: {existing_dynamic_type}\n"
                     f"New type: {dynamic_type}"
                 )
@@ -619,8 +651,15 @@ class BalloonProvider(Protocol[B]):  # type: ignore[misc]
         Provide the balloon with the given name, possibly inflating it from the JSON
         database if missing from memory.
 
-        :param name: The balloon name.
-        :return: The balloon.
+        :param name: Balloon name.
+        :return: Balloon with the given name.
+        """
+
+    def get_names(self) -> set[str]:
+        """
+        Provide the names of the balloons.
+
+        :return: Names of the balloons.
         """
 
 
@@ -629,16 +668,16 @@ class BalloonTracker(Protocol[B]):  # type: ignore[misc]
     Tracks named balloons of a balloon type, including subtypes.
     """
 
-    def track(self, balloon: BN) -> None:
+    def track(self, balloon: B) -> None:
         """
         Track a balloon, possibly deflating it to the JSON database if missing from
         disk.
 
-        :param balloon: The balloon to track.
+        :param balloon: Balloon to track.
         """
 
 
-class FrozenBalloonist(BalloonProvider[B]):
+class StandardBalloonProvider(BalloonProvider[B]):
     """
     Provides named balloons of a balloon type, including subtypes.
     """
@@ -646,31 +685,60 @@ class FrozenBalloonist(BalloonProvider[B]):
     def __init__(
         self,
         type_: type[B],
-        namespace_manager: DynamicTypeManager,
-        balloon_providers: dict[type[Balloon], SpecializedBalloonProvider[NamedBalloon]],
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ],
+        dynamic_type_provider: DynamicTypeProvider,
     ) -> None:
         """
-        :param type_: The type of the managed balloons.
-        :param namespace_manager: The manager of the namespaces of balloons.
-        :param balloon_providers: The specialized providers for each type of balloon.
+        :param type_: Type of the managed balloons.
+        :param specialized_providers: Specialized providers for each type of balloon.
+        :param dynamic_type_manager: Manager of dynamic types of balloons.
         """
         self._type = type_
-        self._namespace_manager = namespace_manager
-        self._balloon_providers = balloon_providers
+        self._dynamic_type_provider = dynamic_type_provider
+        self._specialized_providers = specialized_providers
 
     def get(self, name: str) -> B:
-        type_: type[Balloon] | None = self._namespace_manager.get(name, self._type)
+        type_ = self._dynamic_type_provider.get(name, self._type)
         if type_ is None:
             raise ValueError(f"Could not find balloon with name: {name}")
 
-        balloon_provider = self._balloon_providers[type_]
-        return balloon_provider.get(name)
+        return self._specialized_providers[type_].get(name)  # type: ignore[return-value]
 
     def get_names(self) -> set[str]:
-        names = set()
-        for balloon_provider in self._balloon_providers.values():
-            names.update(balloon_provider.get_names())
-        return names
+        return {n for p in self._specialized_providers.values() for n in p.get_names()}
+
+
+class StandardBalloonTracker(BalloonTracker[B]):
+    def __init__(
+        self,
+        type_: type[B],
+        specialized_trackers: dict[
+            type[Balloon], SpecializedBalloonTracker[NamedBalloon]
+        ],
+        dynamic_type_tracker: DynamicTypeManager,
+    ) -> None:
+        """
+        :param type_: Type of the managed balloons.
+        :param specialized_trackers: Specialized trackers for each type of balloon.
+        :param dynamic_type_tracker: Tracker of dynamic types of balloons.
+        """
+        self._type = type_
+        self._specialized_trackers = specialized_trackers
+        self._dynamic_type_tracker = dynamic_type_tracker
+
+    def track(self, balloon: B) -> None:
+        if not isinstance(balloon, NamedBalloon):
+            raise ValueError(f"Balloon is not named: {balloon}")
+
+        named_type = type(balloon)
+        type_ = named_type.Base
+
+        # Idempotent, makes sure the types match
+        self._dynamic_type_tracker.track(balloon.name, type_)
+        # Idempotent, makes sure the values match
+        self._specialized_trackers[type_].track(balloon)
 
 
 class Balloonist(BalloonProvider[B], BalloonTracker[B]):
@@ -681,225 +749,278 @@ class Balloonist(BalloonProvider[B], BalloonTracker[B]):
     def __init__(
         self,
         type_: type[B],
-        namespace_manager: DynamicTypeManager,
-        balloon_managers: dict[type[Balloon], SpecializedBalloonManager[NamedBalloon]],
+        provider: BalloonProvider[B],
+        tracker: BalloonTracker[B],
     ) -> None:
         """
-        :param type_: The type of the managed balloons.
-        :param name_to_type_manager: The manager to retrieve balloon types by name.
-        :param balloon_managers: The specialized managers for each type of balloon.
+        :param type_: Type of the managed balloons.
+        :param provider: Provider of the balloons.
+        :param tracker: Tracker of the balloons.
         """
         self._type = type_
-        self._namespace_manager = namespace_manager
-        self._balloon_managers = balloon_managers
+        self._provider = provider
+        self._tracker = tracker
 
     def get(self, name: str) -> B:
-        type_: type[Balloon] | None = self._namespace_manager.get(name, self._type)
-        if type_ is None:
-            raise ValueError(f"Could not find balloon with name: {name}")
-
-        balloon_manager = self._balloon_managers[type_]  # type: ignore[index]
-        return balloon_manager.get(name)  # type: ignore[return-value]
+        return self._provider.get(name)
 
     def get_names(self) -> set[str]:
-        names = set()
-        for balloon_manager in self._balloon_managers.values():
-            names.update(balloon_manager.get_names())
-        return names
+        return self._provider.get_names()
 
     def track(self, balloon: B) -> None:
-        assert isinstance(balloon, NamedBalloon)
-        named_type = type(balloon)
-        type_ = named_type.Base
-
-        tracked_type: type[Balloon] | None = self._namespace_manager.get(
-            balloon.name, self._type
-        )
-        if tracked_type is not None:
-            assert type_ is tracked_type
-
-        balloon_manager = self._balloon_managers[type_]
-        balloon_manager.track(balloon)
-        self._namespace_manager.track(balloon.name, type_)
+        self._tracker.track(balloon)
 
 
-class FrozenBalloonDatabase:
+class ClosedBalloonWorld:
     """
-    A read-only database of balloons.
+    A world of where the set of existing balloons is fixed.
     """
 
     def __init__(
         self,
         namespace_types: set[type[Balloon]],
-        balloon_providers: dict[
+        specialized_providers: dict[
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
         ],
-        namespace_manager: DynamicTypeManager,
+        dynamic_type_provider: DynamicTypeProvider,
     ) -> None:
         """
-        :param namespace_types: The balloon types representing a namespace.
-        :param ballon_providers: The specialized providers for each type of balloon.
-        :param namespace_manager: The manager of the namespaces of balloons.
+        :param namespace_types: Balloon types representing a namespace.
+        :param specialized_providers: Specialized providers for each type of balloon.
+        :param dynamic_type_manager: Manager of dynamic types of balloons.
         """
         self._namespace_types = namespace_types
-        self._balloon_providers = balloon_providers
-        self._namespace_manager = namespace_manager
+        self._specialized_providers = specialized_providers
+        self._dynamic_type_provider = dynamic_type_provider
 
-    def instantiate(self, type_: type[B]) -> FrozenBalloonist[B]:
+    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
         """
         Instantiate a balloon provider for a given type.
 
-        :param type_: A balloon type.
-        :return: The balloonist for the balloon type.
+        :param type_: Balloon type.
+        :return: The balloon provider for the type.
         """
         if all(not issubclass(type_, t) for t in self._namespace_types):
-            raise ValueError(f"Unsupported balloonist balloon type: {type_}")
+            raise ValueError(f"Unsupported balloon type: {type_}")
 
-        balloon_providers: dict[
-            type[Balloon], SpecializedBalloonManager[NamedBalloon]
-        ] = {t: bs for t, bs in self._balloon_providers.items() if issubclass(t, type_)}
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ] = {
+            t: bs
+            for t, bs in self._specialized_providers.items()
+            if issubclass(t, type_)
+        }
 
-        return FrozenBalloonist(
+        return StandardBalloonProvider(
             type_=type_,
-            namespace_manager=self._namespace_manager,
-            balloon_providers=balloon_providers,
+            specialized_providers=specialized_providers,
+            dynamic_type_provider=self._dynamic_type_provider,
         )
 
     # ---------------------------------------------------------------------------------
 
-    def extend(
-        self,
-        database_path: Path,
-        # TODO: Give the possibility to extend namespaces and schema types
-        # namespace_types: set[type[Balloon]],
-        # schema_types: set[type[Balloon]],
-    ) -> FrozenBalloonDatabase:
-        balloon_managers: dict[
-            type[Balloon], SpecializedBalloonManager[NamedBalloon]
+    def populate(self, database_path: Path) -> ClosedBalloonWorld:
+        """
+        Populate the world with balloons from a database.
+
+        :param database_path: Path to the database.
+        :return: The populated world.
+        """
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
         ] = {}
 
-        field_deflator = Deflator(
-            trackers=balloon_managers,
+        inflator = Inflator(
+            types_={t.__qualname__: t for t in self._specialized_providers},
+            providers=specialized_providers,
         )
-        field_inflator = Inflator(
-            types_={t.__qualname__: t for t in types_},
-            providers=balloon_managers,
-        )
-        for type_, balloon_provider in self._balloon_providers.items():
+        for type_, specialized_provider in self._specialized_providers.items():
             jsons_path = database_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
-            balloon_managers[type_] = SpecializedBalloonManager(
+
+            specialized_providers[type_] = StandardSpecializedBalloonProvider(
                 type_=type_.Named,
-                names=names,
-                inflator=field_inflator,
-                deflator=field_deflator,
                 jsons_path=jsons_path,
-                base_provider=balloon_provider,
+                cache=BalloonDatabaseCache(type_=type_.Named, names=names),
+                baseline_provider=specialized_provider,
+                inflator=inflator,
             )
 
-        namespace_manager = DynamicTypeManager(namespace_types=top_namespace_types)
-        for type_, balloon_manager in balloon_managers.items():
-            for name in balloon_manager.get_names():
-                namespace_manager.track(name, type_)
+        dynamic_type_manager = DynamicTypeManager(
+            namespace_types=self._namespace_types,
+            baseline_provider=self._dynamic_type_provider,
+        )
+        for type_, specialized_provider in specialized_providers.items():
+            for name in specialized_provider.get_names():
+                dynamic_type_manager.track(name, type_)
 
-        return FrozenBalloonDatabase(
-            namespace_types=top_namespace_types,
-            balloon_managers=balloon_managers,
-            namespace_manager=namespace_manager,
+        return ClosedBalloonWorld(
+            namespace_types=self._namespace_types,
+            specialized_providers=specialized_providers,
+            dynamic_type_provider=dynamic_type_manager,
         )
 
-    def extend_as_writeable(self) -> BalloonDatabase:
-        ...
+    def to_open(self, database_path: Path) -> OpenBalloonWorld:
+        """
+        Convert the world to an open world.
+
+        :param database_path: Path to the database where new balloons are stored.
+        :return: The open world.
+        """
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ] = {}
+        specialized_trackers: dict[
+            type[Balloon], SpecializedBalloonTracker[NamedBalloon]
+        ] = {}
+
+        inflator = Inflator(
+            types_={t.__qualname__: t for t in self._specialized_providers},
+            providers=specialized_providers,
+        )
+        deflator = Deflator(
+            trackers=specialized_trackers,
+        )
+
+        for type_, specialized_provider in self._specialized_providers.items():
+            jsons_path = database_path / type_.__qualname__
+            jsons_path.mkdir(exist_ok=True)
+            names = {p.stem for p in jsons_path.iterdir()}
+            cache = BalloonDatabaseCache(type_=type_.Named, names=names)
+
+            specialized_providers[type_] = StandardSpecializedBalloonProvider(
+                type_=type_.Named,
+                jsons_path=jsons_path,
+                cache=cache,
+                baseline_provider=specialized_provider,
+                inflator=inflator,
+            )
+            specialized_trackers[type_] = SpecializedBalloonTracker(
+                type_=type_.Named,
+                jsons_path=jsons_path,
+                cache=cache,
+                baseline_provider=specialized_provider,
+                inflator=inflator,
+                deflator=deflator,
+            )
+
+        dynamic_type_manager = DynamicTypeManager(
+            namespace_types=self._namespace_types,
+            baseline_provider=self._dynamic_type_provider,
+        )
+        for type_, specialized_provider in specialized_providers.items():
+            for name in specialized_provider.get_names():
+                dynamic_type_manager.track(name, type_)
+
+        return OpenBalloonWorld(
+            namespace_types=self._namespace_types,
+            specialized_providers=specialized_providers,
+            specialized_trackers=specialized_trackers,
+            dynamic_type_manager=dynamic_type_manager,
+        )
+
+    # TODO: Give the possibility to extend namespaces and schema types
+    # def extend(self, namespace_types, types): ...
+
+    @staticmethod
+    def create(
+        namespace_types: set[type[Balloon]],
+        types_: set[type[Balloon]],
+    ) -> ClosedBalloonWorld:
+        """
+        Create an empty world of balloons with a given schema.
+
+        :param namespace_types: Balloon types representing a namespace.
+        :param types: Balloon types to manage.
+        """
+        return ClosedBalloonWorld(
+            namespace_types=namespace_types,
+            specialized_providers={
+                t: EmptySpecializedBalloonProvider() for t in types_
+            },
+            dynamic_type_provider=EmptyDynamicTypeProvider(),
+        )
 
 
-class BalloonDatabase:
+class OpenBalloonWorld:
     """
-    A database of balloons.
+    A world where the set of existing balloons can grow.
     """
 
     def __init__(
         self,
         namespace_types: set[type[Balloon]],
-        balloon_managers: dict[type[Balloon], SpecializedBalloonManager[NamedBalloon]],
-        namespace_manager: DynamicTypeManager,
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ],
+        specialized_trackers: dict[
+            type[Balloon], SpecializedBalloonTracker[NamedBalloon]
+        ],
+        dynamic_type_manager: DynamicTypeManager,
     ) -> None:
         """
-        :param namespace_types: The balloon types representing a namespace.
-        :param balloon_managers: The specialized managers for each type of balloon.
-        :param namespace_manager: The manager of the namespaces of balloons.
+        :param namespace_types: Balloon types representing a namespace.
+        :param specialized_providers: Specialized providers for each type of balloon.
+        :param specialized_trackers: Specialized trackers for each type of balloon.
+        :param dynamic_type_manager: Manager of dynamic types of balloons.
         """
         self._namespace_types = namespace_types
-        self._balloon_managers = balloon_managers
-        self._namespace_manager = namespace_manager
+        self._specialized_providers = specialized_providers
+        self._specialized_trackers = specialized_trackers
+        self._dynamic_type_manager = dynamic_type_manager
 
-    def instantiate(self, type_: type[B]) -> Balloonist[B]:
+    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
         """
-        Instantiate a balloonist for a balloon type
+        Instantiate a balloon provider for a balloon type
 
-        :param type_: A balloon type.
-        :return: The balloonist for the balloon type.
+        :param type_: Balloon type.
+        :return: Balloon provider for the balloon type.
         """
         if all(not issubclass(type_, t) for t in self._namespace_types):
             raise ValueError(f"Unsupported balloonist balloon type: {type_}")
 
-        balloon_managers: dict[
-            type[Balloon], SpecializedBalloonManager[NamedBalloon]
-        ] = {t: bs for t, bs in self._balloon_managers.items() if issubclass(t, type_)}
+        specialized_providers = {
+            t: specialized_provider
+            for t, specialized_provider in self._specialized_providers.items()
+            if issubclass(t, type_)
+        }
 
-        return Balloonist(
+        return StandardBalloonProvider(
             type_=type_,
-            namespace_manager=self._namespace_manager,
-            balloon_managers=balloon_managers,
+            specialized_providers=specialized_providers,  # type: ignore[arg-type]
+            dynamic_type_provider=self._dynamic_type_manager,
         )
 
-    @staticmethod
-    def create(
-        top_namespace_types: set[type[Balloon]],
-        types_: set[type[Balloon]],
-        json_database_path: Path,
-    ) -> BalloonDatabase:
+    def get_tracker(self, type_: type[B]) -> BalloonTracker[B]:
         """
-        Create a factory for balloonists.
+        Instantiate a balloon tracker for a balloon type.
 
-        :param top_namespace_types: The balloon types that define the top of their
-            respective namespaces.
-        :param types_: The balloon types.
-        :param json_database_path: The path to the JSON database.
-        :return: The factory for balloonists.
+        :param type_: Balloon type.
+        :return: Balloon tracker for the balloon type.
         """
-        balloon_managers: dict[
-            type[Balloon], SpecializedBalloonManager[NamedBalloon]
-        ] = {}
+        if all(not issubclass(type_, t) for t in self._namespace_types):
+            raise ValueError(f"Unsupported balloonist balloon type: {type_}")
 
-        field_deflator = Deflator(
-            trackers=balloon_managers,
-        )
-        field_inflator = Inflator(
-            types_={t.__qualname__: t for t in types_},
-            providers=balloon_managers,
-        )
-        for type_ in types_:
-            if not any(issubclass(type_, t) for t in top_namespace_types):
-                continue
-            jsons_path = json_database_path / type_.__qualname__
-            jsons_path.mkdir(exist_ok=True)
-            names = {p.stem for p in jsons_path.iterdir()}
-            balloon_managers[type_] = SpecializedBalloonManager(
-                type_=type_.Named,
-                names=names,
-                inflator=field_inflator,
-                deflator=field_deflator,
-                jsons_path=jsons_path,
-            )
+        specialized_trackers = {
+            t: specialized_tracker
+            for t, specialized_tracker in self._specialized_trackers.items()
+            if issubclass(t, type_)
+        }
 
-        namespace_manager = DynamicTypeManager(namespace_types=top_namespace_types)
-        for type_, balloon_manager in balloon_managers.items():
-            for name in balloon_manager.get_names():
-                namespace_manager.track(name, type_)
-
-        return BalloonDatabase(
-            namespace_types=top_namespace_types,
-            balloon_managers=balloon_managers,
-            namespace_manager=namespace_manager,
+        return StandardBalloonTracker(
+            type_=type_,
+            specialized_trackers=specialized_trackers,  # type: ignore[arg-type]
+            dynamic_type_tracker=self._dynamic_type_manager,
         )
+
+    def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
+        """
+        Instantiate a balloonist for a balloon type.
+
+        :param type_: Balloon type.
+        :return: Balloonist for the balloon type.
+        """
+        provider = self.get_provider(type_)
+        tracker = self.get_tracker(type_)
+        return Balloonist(type_=type_, provider=provider, tracker=tracker)

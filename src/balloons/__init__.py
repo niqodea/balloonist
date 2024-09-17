@@ -1,8 +1,11 @@
 from balloons.core import (
     Balloon,
     Balloonist,
-    BalloonistFactory,
-    Value,
+    BalloonProvider,
+    BalloonTracker,
+    ClosedBalloonWorld,
+    InflatedValue,
     NamedBalloon,
+    OpenBalloonWorld,
     balloon,
 )
