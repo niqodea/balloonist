@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from balloons import BalloonistFactory
+from balloons import DynamicBalloonDatabase
 from tests.basic.objects import (
     ABIGAIL,
     ALEX,
@@ -19,8 +19,8 @@ from tests.basic.schema import Animal, Cat, Dog, Owner
 JSON_DATABASE_PATH = Path(__file__).parent / "database"
 
 
-def get_balloonist_factory(json_database_path: Path) -> BalloonistFactory:
-    return BalloonistFactory.create(
+def get_balloonist_factory(json_database_path: Path) -> DynamicBalloonDatabase:
+    return DynamicBalloonDatabase.create(
         top_namespace_types={Animal, Owner},
         types_={Animal, Animal.Size, Cat, Dog, Owner},
         json_database_path=json_database_path,
