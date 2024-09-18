@@ -45,7 +45,8 @@ class Balloon:
         """
         Treat the balloon as a named balloon.
         """
-        assert isinstance(self, NamedBalloon)
+        if not isinstance(self, NamedBalloon):
+            raise ValueError(f"Balloon is not named: {self}")
         return self
 
     Named: ClassVar[type[NamedBalloon]]
@@ -189,8 +190,9 @@ class Inflator:
             # NOTE: Arbitrary union types not implemented for now
             # They would either require a try/except logic or inspecting the deflated
             # value to determine the type
-            optional_type, none_type = type_args
-            assert none_type is NoneType
+            assert len(type_args) == 2
+            assert type_args[1] is NoneType
+            optional_type = type_args[0]
 
             if deflated_value is None:
                 return None  # type: ignore[return-value]
