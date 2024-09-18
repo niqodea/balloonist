@@ -542,6 +542,7 @@ class SpecializedBalloonTracker(Generic[BN]):
             stored_balloon = self._type(**init_kwargs)
 
             if balloon == stored_balloon:
+                self._cache.track(balloon)
                 return
 
             raise ValueError(
