@@ -169,7 +169,8 @@ class Inflator:
         type_args = get_args(static_type)
 
         if type_origin is dict:
-            assert isinstance(deflated_value, dict)
+            if not isinstance(deflated_value, dict):
+                raise ValueError(f"Expected dict, got: {type(deflated_value)}")
             key_type, value_type = type_args
             return {
                 self.inflate(key, key_type): self.inflate(value, value_type)
@@ -177,12 +178,14 @@ class Inflator:
             }  # type: ignore[return-value]
 
         if type_origin is tuple:
-            assert isinstance(deflated_value, list)
+            if not isinstance(deflated_value, list):
+                raise ValueError(f"Expected list, got: {type(deflated_value)}")
             (item_type,) = type_args
             return tuple(self.inflate(item, item_type) for item in deflated_value)  # type: ignore[return-value]
 
         if type_origin is set:
-            assert isinstance(deflated_value, list)
+            if not isinstance(deflated_value, list):
+                raise ValueError(f"Expected list, got: {type(deflated_value)}")
             (item_type,) = type_args
             return {self.inflate(item, item_type) for item in deflated_value}  # type: ignore[return-value]
 
@@ -190,8 +193,8 @@ class Inflator:
             # NOTE: Arbitrary union types not implemented for now
             # They would either require a try/except logic or inspecting the deflated
             # value to determine the type
-            assert len(type_args) == 2
-            assert type_args[1] is NoneType
+            if len(type_args) != 2 or type_args[1] is not NoneType:
+                raise ValueError(f"Unsupported union type: {static_type}")
             optional_type = type_args[0]
 
             if deflated_value is None:
@@ -204,13 +207,18 @@ class Inflator:
                 # it is a named balloon
                 type_name, _, name = deflated_value.partition(":")
                 type_ = self._types[type_name]
-                assert issubclass(type_, static_type)
+                if not issubclass(type_, static_type):
+                    raise ValueError(f"Expected type: {static_type}, got: {type_}")
+
                 provider = self._providers[type_]
                 return provider.get(name)  # type: ignore[return-value]
+
             if isinstance(deflated_value, dict):
                 type_name = deflated_value["type"]
                 type_ = self._types[type_name]
-                assert issubclass(type_, static_type)
+                if not issubclass(type_, static_type):
+                    raise ValueError(f"Expected type: {static_type}, got: {type_}")
+
                 deflated_fields = deflated_value["fields"]
                 field_types = get_type_hints(type_)
                 inflated_fields = {
@@ -221,14 +229,17 @@ class Inflator:
                     for field_name, deflated_field in deflated_fields.items()
                 }
                 return type_(**inflated_fields)  # type: ignore[return-value]
+
             raise ValueError(f"Unsupported balloon value: {deflated_value}")
 
         if issubclass(static_type, Enum):
-            assert isinstance(deflated_value, str)
+            if not isinstance(deflated_value, str):
+                raise ValueError(f"Expected str, got: {type(deflated_value)}")
             return static_type[deflated_value]  # type: ignore[return-value]
 
         if issubclass(static_type, Atomic):
-            assert isinstance(deflated_value, static_type)
+            if not isinstance(deflated_value, static_type):
+                raise ValueError(f"Expected {static_type}, got: {type(deflated_value)}")
             return deflated_value  # type: ignore[return-value]
 
         raise ValueError(f"Unsupported type: {static_type}")
