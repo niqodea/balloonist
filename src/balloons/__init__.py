@@ -1,6 +1,7 @@
 from balloons.core import (
     Balloon,
     Balloonist,
+    BalloonManager,
     BalloonProvider,
     BalloonTracker,
     ClosedBalloonWorld,
