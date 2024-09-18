@@ -225,7 +225,7 @@ class Inflator:
             assert isinstance(deflated_value, str)
             return static_type[deflated_value]  # type: ignore[return-value]
 
-        if issubclass(static_type, Atomic):  # type: ignore[arg-type,misc]
+        if issubclass(static_type, Atomic):
             assert isinstance(deflated_value, static_type)
             return deflated_value  # type: ignore[return-value]
 
@@ -289,13 +289,13 @@ class Deflator:
                 for key, value in inflated_value.items()
             }
 
-        if isinstance(inflated_value, (set, tuple)):
+        if isinstance(inflated_value, set | tuple):
             return [self.deflate(item) for item in inflated_value]
 
         if isinstance(inflated_value, Enum):
             return inflated_value.name
 
-        if isinstance(inflated_value, Atomic):  # type: ignore[arg-type,misc]
+        if isinstance(inflated_value, Atomic):
             return inflated_value
 
         if inflated_value is None:
@@ -576,10 +576,10 @@ class SpecializedBalloonTracker(Generic[BN]):
             for key, value in field.items():
                 self._track_field(key)
                 self._track_field(value)
-        elif isinstance(field, (set, tuple)):
+        elif isinstance(field, set | tuple):
             for item in field:
                 self._track_field(item)
-        elif isinstance(field, (Enum, Atomic, None)):  # type: ignore[arg-type]
+        elif isinstance(field, Enum | Atomic | None):
             pass
         else:
             raise ValueError(f"Unsupported type: {type(field)}")
