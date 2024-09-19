@@ -20,7 +20,7 @@ DATABASE_PATH = Path(__file__).parent / "database"
 
 BASE_WORLD = ClosedBalloonWorld.create(
     namespace_types={Animal, Owner},
-    types_={Animal, Animal.Size, Cat, Dog, Owner},
+    nameable_types={Cat, Dog, Owner},
 )
 
 

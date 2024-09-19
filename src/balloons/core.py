@@ -76,6 +76,9 @@ class NamedBalloon(Balloon):
     """
 
 
+Balloon.Named = NamedBalloon
+
+
 @dataclass_transform(frozen_default=True)
 def balloon(cls: type[Balloon]) -> type[Balloon]:
     """
@@ -195,7 +198,7 @@ class Inflator:
             # value to determine the type
             if len(type_args) != 2 or type_args[1] is not NoneType:
                 raise ValueError(f"Unsupported union type: {static_type}")
-            optional_type = type_args[0]
+            optional_type, _ = type_args
 
             if deflated_value is None:
                 return None  # type: ignore[return-value]
@@ -756,6 +759,7 @@ class StandardBalloonProvider(BalloonProvider[B]):
 
     def get(self, name: str) -> B:
         type_ = self._dynamic_type_provider.get(name, self._type)
+
         if type_ is None:
             raise ValueError(f"Could not find balloon with name: {name}")
 
@@ -789,6 +793,9 @@ class StandardBalloonTracker(BalloonTracker[B]):
 
         named_type = type(balloon)
         type_ = named_type.Base
+
+        if type_ not in self._specialized_trackers:
+            raise ValueError(f"Unsupported balloon type: {type_}")
 
         # Idempotent, makes sure the types match
         self._dynamic_type_tracker.track(balloon.name, type_)
@@ -868,33 +875,47 @@ class Balloonist(Generic[B]):
         return self._deflator.deflate(inflated_balloon)
 
 
-class ClosedBalloonWorld:
+class BalloonWorld(Protocol):
     """
-    A world of where the set of existing balloons is fixed.
+    A world of balloons.
     """
 
-    def __init__(
-        self,
-        namespace_types: set[type[Balloon]],
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
-        ],
-        dynamic_type_provider: DynamicTypeProvider,
-        inflator: Inflator,
-        deflator: Deflator,
-    ) -> None:
+    @dataclass
+    class Schema:
         """
-        :param namespace_types: Balloon types representing a namespace.
-        :param specialized_providers: Specialized providers for each type of balloon.
-        :param dynamic_type_manager: Manager of dynamic types of balloons.
-        :param inflator: Inflator of deflated values.
-        :param deflator: Deflator of inflated values.
+        A schema of a world of balloons.
         """
-        self._namespace_types = namespace_types
-        self._specialized_providers = specialized_providers
-        self._dynamic_type_provider = dynamic_type_provider
-        self._inflator = inflator
-        self._deflator = deflator
+
+        types_: set[type[Balloon]]
+        """
+        All balloon types of the world.
+        """
+
+        namespace_types: set[type[Balloon]]
+        """
+        Balloon types representing a namespace.
+        """
+
+        nameable_types: set[type[Balloon]]
+        """
+        Balloon types that can be named.
+        """
+
+    def get_schema(self) -> Schema:
+        """
+        Get the schema of the world.
+
+        :return: The schema of the world.
+        """
+
+    # TODO: Understand how to deduplicate the implementation of the methods below
+    def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
+        """
+        Instantiate a balloonist for a given type.
+
+        :param type_: Balloon type.
+        :return: The balloonist for the type.
+        """
 
     def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
         """
@@ -903,31 +924,69 @@ class ClosedBalloonWorld:
         :param type_: Balloon type.
         :return: The balloon provider for the type.
         """
-        if all(not issubclass(type_, t) for t in self._namespace_types):
-            raise ValueError(f"Unsupported balloon type: {type_}")
 
+
+class ClosedBalloonWorld(BalloonWorld):
+    """
+    A world of where the set of existing balloons is fixed.
+    """
+
+    def __init__(
+        self,
+        schema: BalloonWorld.Schema,
         specialized_providers: dict[
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
-        ] = {
-            t: bs
-            for t, bs in self._specialized_providers.items()
-            if issubclass(t, type_)
-        }
+        ],
+        dynamic_type_provider: DynamicTypeProvider,
+        inflator: Inflator,
+        deflator: Deflator,
+    ) -> None:
+        """
+        :param schema: Schema of the world.
+        :param specialized_providers: Specialized providers for each type of balloon.
+        :param dynamic_type_manager: Manager of dynamic types of balloons.
+        :param inflator: Inflator of deflated values.
+        :param deflator: Deflator of inflated values.
+        """
+        self._schema = schema
+        self._specialized_providers = specialized_providers
+        self._dynamic_type_provider = dynamic_type_provider
+        self._inflator = inflator
+        self._deflator = deflator
 
-        return StandardBalloonProvider(
-            type_=type_,
-            specialized_providers=specialized_providers,
-            dynamic_type_provider=self._dynamic_type_provider,
-        )
+    def get_schema(self) -> BalloonWorld.Schema:
+        return self._schema
 
     def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
+        if type_ not in self._schema.types_:
+            raise ValueError(f"Unsupported balloon type: {type_}")
+
         return Balloonist(
             type_=type_,
             inflator=self._inflator,
             deflator=self._deflator,
         )
 
-    # ---------------------------------------------------------------------------------
+    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
+        if type_ not in self._schema.types_:
+            raise ValueError(f"Unsupported balloon type: {type_}")
+
+        if all(not issubclass(type_, t) for t in self._schema.namespace_types):
+            raise ValueError(f"Type does not reside in a namespace: {type_}")
+
+        nameable_types = {
+            t for t in self._schema.nameable_types if issubclass(t, type_)
+        }
+
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ] = {t: self._specialized_providers[t] for t in nameable_types}
+
+        return StandardBalloonProvider(
+            type_=type_,
+            specialized_providers=specialized_providers,
+            dynamic_type_provider=self._dynamic_type_provider,
+        )
 
     def populate(self, database_path: Path) -> ClosedBalloonWorld:
         """
@@ -941,7 +1000,7 @@ class ClosedBalloonWorld:
         ] = {}
 
         inflator = Inflator(
-            types_={t.__qualname__: t for t in self._specialized_providers},
+            types_={t.__qualname__: t for t in self._schema.types_},
             providers=specialized_providers,
         )
         deflator = Deflator(
@@ -962,7 +1021,7 @@ class ClosedBalloonWorld:
             )
 
         dynamic_type_manager = DynamicTypeManager(
-            namespace_types=self._namespace_types,
+            namespace_types=self._schema.namespace_types,
             baseline_provider=self._dynamic_type_provider,
         )
         for type_, specialized_provider in specialized_providers.items():
@@ -970,7 +1029,7 @@ class ClosedBalloonWorld:
                 dynamic_type_manager.track(name, type_)
 
         return ClosedBalloonWorld(
-            namespace_types=self._namespace_types,
+            schema=self._schema,
             specialized_providers=specialized_providers,
             dynamic_type_provider=dynamic_type_manager,
             inflator=inflator,
@@ -992,7 +1051,7 @@ class ClosedBalloonWorld:
         ] = {}
 
         inflator = Inflator(
-            types_={t.__qualname__: t for t in self._specialized_providers},
+            types_={t.__qualname__: t for t in self._schema.types_},
             providers=specialized_providers,
         )
         deflator = Deflator(
@@ -1023,7 +1082,7 @@ class ClosedBalloonWorld:
             )
 
         dynamic_type_manager = DynamicTypeManager(
-            namespace_types=self._namespace_types,
+            namespace_types=self._schema.namespace_types,
             baseline_provider=self._dynamic_type_provider,
         )
         for type_, specialized_provider in specialized_providers.items():
@@ -1031,7 +1090,7 @@ class ClosedBalloonWorld:
                 dynamic_type_manager.track(name, type_)
 
         return OpenBalloonWorld(
-            namespace_types=self._namespace_types,
+            schema=self._schema,
             specialized_providers=specialized_providers,
             specialized_trackers=specialized_trackers,
             dynamic_type_manager=dynamic_type_manager,
@@ -1045,24 +1104,94 @@ class ClosedBalloonWorld:
     @staticmethod
     def create(
         namespace_types: set[type[Balloon]],
-        types_: set[type[Balloon]],
+        nameable_types: set[type[Balloon]],
+        top_types: set[type[Balloon]] | None = None,
     ) -> ClosedBalloonWorld:
         """
-        Create an empty world of balloons with a given schema.
+        Create an empty world of balloons.
 
         :param namespace_types: Balloon types representing a namespace.
-        :param types: Balloon types to manage.
+        :param nameable_types: Balloon types with named instances.
+        :param top_types: Balloon types not subtypes of any other type.
         """
+        if top_types is None:
+            top_types = {
+                t for t in Balloon.__subclasses__() if not issubclass(t, NamedBalloon)
+            }
+
+        types_ = set(top_types)
+        discoverable_types = set(top_types)
+        while len(discoverable_types) > 0:
+            new_types: set[type[Balloon]] = set()
+            for discoverable_type in discoverable_types:
+                new_types.update(
+                    t
+                    for t in discoverable_type.__subclasses__()
+                    if t is not discoverable_type.Named and t not in types_
+                )
+
+                for field_type in get_type_hints(discoverable_type).values():
+                    type_origin = get_origin(field_type)
+                    type_args = get_args(field_type)
+
+                    if type_origin is ClassVar:
+                        pass
+                    elif type_origin is dict:
+                        key_type, value_type = type_args
+                        if issubclass(key_type, Balloon) and key_type not in types_:
+                            new_types.add(key_type)
+                        if issubclass(value_type, Balloon) and value_type not in types_:
+                            new_types.add(value_type)
+                    elif type_origin is set or type_origin is tuple:
+                        (item_type,) = type_args
+                        if issubclass(item_type, Balloon) and item_type not in types_:
+                            new_types.add(item_type)
+                    elif type_origin is UnionType:
+                        if len(type_args) != 2 or type_args[1] is not NoneType:
+                            raise ValueError(f"Unsupported Union type: {field_type}")
+                        optional_type, _ = type_args
+                        if (
+                            issubclass(optional_type, Balloon)
+                            and optional_type not in types_
+                        ):
+                            new_types.add(optional_type)
+                    elif issubclass(field_type, Balloon) and field_type not in types_:
+                        new_types.add(field_type)
+            types_.update(new_types)
+            discoverable_types = new_types
+
+        if not namespace_types < types_:
+            raise ValueError("Namespace types must be a subset of all types")
+
+        if not nameable_types < types_:
+            raise ValueError("Nameable types must be a subset of all types")
+
+        for nameable_type in nameable_types:
+            if all(not issubclass(nameable_type, t) for t in namespace_types):
+                raise ValueError(
+                    f"Nameable type must reside in a namespace: {nameable_type}"
+                )
+
+        for namespace_type in namespace_types:
+            if all(not issubclass(t, namespace_type) for t in nameable_types):
+                raise ValueError(
+                    f"Namespace type must contain nameable types: {namespace_type}"
+                )
+
         empty_specialized_providers: dict[
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
-        ] = {t: EmptySpecializedBalloonProvider() for t in types_}
+        ] = {t: EmptySpecializedBalloonProvider() for t in nameable_types}
 
         return ClosedBalloonWorld(
-            namespace_types=namespace_types,
+            schema=BalloonWorld.Schema(
+                types_=types_,
+                namespace_types=namespace_types,
+                nameable_types=nameable_types,
+            ),
             specialized_providers=empty_specialized_providers,
             dynamic_type_provider=EmptyDynamicTypeProvider(),
             inflator=Inflator(
-                types_={t.__qualname__: t for t in empty_specialized_providers},
+                types_={t.__qualname__: t for t in types_},
                 providers=empty_specialized_providers,
             ),
             deflator=Deflator(
@@ -1078,7 +1207,7 @@ class OpenBalloonWorld:
 
     def __init__(
         self,
-        namespace_types: set[type[Balloon]],
+        schema: BalloonWorld.Schema,
         specialized_providers: dict[
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
         ],
@@ -1090,42 +1219,55 @@ class OpenBalloonWorld:
         deflator: Deflator,
     ) -> None:
         """
-        :param namespace_types: Balloon types representing a namespace.
+        :param schema: Schema of the world.
         :param specialized_providers: Specialized providers for each type of balloon.
         :param specialized_trackers: Specialized trackers for each type of balloon.
         :param dynamic_type_manager: Manager of dynamic types of balloons.
         :param inflator: Inflator of deflated values.
         :param deflator: Deflator of inflated values.
         """
-        self._namespace_types = namespace_types
+        self._schema = schema
         self._specialized_providers = specialized_providers
         self._specialized_trackers = specialized_trackers
         self._dynamic_type_manager = dynamic_type_manager
         self._inflator = inflator
         self._deflator = deflator
 
-    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
-        """
-        Instantiate a balloon provider for a balloon type
+    def get_schema(self) -> BalloonWorld.Schema:
+        return self._schema
 
-        :param type_: Balloon type.
-        :return: Balloon provider for the balloon type.
-        """
-        if all(not issubclass(type_, t) for t in self._namespace_types):
+    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
+        if type_ not in self._schema.types_:
             raise ValueError(f"Unsupported balloon type: {type_}")
 
-        specialized_providers = {
-            t: specialized_provider
-            for t, specialized_provider in self._specialized_providers.items()
-            if issubclass(t, type_)
+        if all(not issubclass(type_, t) for t in self._schema.namespace_types):
+            raise ValueError(f"Type does not reside in a namespace: {type_}")
+
+        nameable_types = {
+            t for t in self._schema.nameable_types if issubclass(t, type_)
         }
+
+        specialized_providers: dict[
+            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        ] = {t: self._specialized_providers[t] for t in nameable_types}
 
         return StandardBalloonProvider(
             type_=type_,
-            specialized_providers=specialized_providers,  # type: ignore[arg-type]
+            specialized_providers=specialized_providers,
             dynamic_type_provider=self._dynamic_type_manager,
         )
 
+    def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
+        if type_ not in self._schema.types_:
+            raise ValueError(f"Unsupported balloon type: {type_}")
+
+        return Balloonist(
+            type_=type_,
+            inflator=self._inflator,
+            deflator=self._deflator,
+        )
+
+    # TODO: Refactor this to a simple world.track()
     def get_tracker(self, type_: type[B]) -> BalloonTracker[B]:
         """
         Instantiate a balloon tracker for a balloon type.
@@ -1133,7 +1275,8 @@ class OpenBalloonWorld:
         :param type_: Balloon type.
         :return: Balloon tracker for the balloon type.
         """
-        if all(not issubclass(type_, t) for t in self._namespace_types):
+
+        if all(not issubclass(type_, t) for t in self._schema.namespace_types):
             raise ValueError(f"Unsupported balloon type: {type_}")
 
         specialized_trackers = {
@@ -1148,6 +1291,7 @@ class OpenBalloonWorld:
             dynamic_type_tracker=self._dynamic_type_manager,
         )
 
+    # TODO: Remove this
     def get_manager(self, type_: type[B]) -> BalloonManager[B]:
         """
         Instantiate a manager for a balloon type.

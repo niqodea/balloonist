@@ -18,7 +18,7 @@ DATABASE_PATH = Path(__file__).parent / "database"
 
 BASE_WORLD = ClosedBalloonWorld.create(
     namespace_types={Food},
-    types_={Food, SimpleFood, CompositeFood},
+    nameable_types={SimpleFood, CompositeFood},
 )
 
 
