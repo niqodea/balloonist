@@ -1,10 +1,8 @@
 {
   "size": {
-    "type": "Animal.Size",
-    "fields": {
-      "height": 15,
-      "weight": 8
-    }
+    "@type": "Animal.Size",
+    "height": 15,
+    "weight": 8
   },
   "purr_type": "soft"
 }

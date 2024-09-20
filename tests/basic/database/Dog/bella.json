@@ -1,10 +1,8 @@
 {
   "size": {
-    "type": "Animal.Size",
-    "fields": {
-      "height": 25,
-      "weight": 15
-    }
+    "@type": "Animal.Size",
+    "height": 25,
+    "weight": 15
   },
   "obedience": 0.7
 }
