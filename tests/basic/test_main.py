@@ -14,14 +14,11 @@ from tests.basic.objects import (
     CHARLOTTE,
     CODY,
 )
-from tests.basic.schema import Animal, Cat, Dog, Owner
+from tests.basic.schema import Animal, Owner
 
 DATABASE_PATH = Path(__file__).parent / "database"
 
-BASE_WORLD = ClosedBalloonWorld.create(
-    namespace_types={Animal, Owner},
-    nameable_types={Cat, Dog, Owner},
-)
+BASE_WORLD = ClosedBalloonWorld.create()
 
 
 def test_inflation(tmp_path: Path) -> None:

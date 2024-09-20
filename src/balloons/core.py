@@ -886,14 +886,14 @@ class BalloonWorld(Protocol):
         A schema of a world of balloons.
         """
 
-        types_: set[type[Balloon]]
-        """
-        All balloon types of the world.
-        """
-
         namespace_types: set[type[Balloon]]
         """
         Balloon types representing a namespace.
+        """
+
+        types_: set[type[Balloon]]
+        """
+        All balloon types of the world.
         """
 
         nameable_types: set[type[Balloon]]
@@ -924,6 +924,54 @@ class BalloonWorld(Protocol):
         :param type_: Balloon type.
         :return: The balloon provider for the type.
         """
+
+    @staticmethod
+    def discover(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
+        """
+        Discover the balloon types given the top types.
+        """
+        types_ = set(top_types)
+        discoverable_types = set(top_types)
+        while len(discoverable_types) > 0:
+            new_types: set[type[Balloon]] = set()
+            for discoverable_type in discoverable_types:
+                new_types.update(
+                    t
+                    for t in discoverable_type.__subclasses__()
+                    if t is not discoverable_type.Named and t not in types_
+                )
+
+                for field_type in get_type_hints(discoverable_type).values():
+                    type_origin = get_origin(field_type)
+                    type_args = get_args(field_type)
+
+                    if type_origin is ClassVar:
+                        pass
+                    elif type_origin is dict:
+                        key_type, value_type = type_args
+                        if issubclass(key_type, Balloon) and key_type not in types_:
+                            new_types.add(key_type)
+                        if issubclass(value_type, Balloon) and value_type not in types_:
+                            new_types.add(value_type)
+                    elif type_origin is set or type_origin is tuple:
+                        (item_type,) = type_args
+                        if issubclass(item_type, Balloon) and item_type not in types_:
+                            new_types.add(item_type)
+                    elif type_origin is UnionType:
+                        if len(type_args) != 2 or type_args[1] is not NoneType:
+                            raise ValueError(f"Unsupported Union type: {field_type}")
+                        optional_type, _ = type_args
+                        if (
+                            issubclass(optional_type, Balloon)
+                            and optional_type not in types_
+                        ):
+                            new_types.add(optional_type)
+                    elif issubclass(field_type, Balloon) and field_type not in types_:
+                        new_types.add(field_type)
+            types_.update(new_types)
+            discoverable_types = new_types
+
+        return types_
 
 
 class ClosedBalloonWorld(BalloonWorld):
@@ -1103,67 +1151,33 @@ class ClosedBalloonWorld(BalloonWorld):
 
     @staticmethod
     def create(
-        namespace_types: set[type[Balloon]],
-        nameable_types: set[type[Balloon]],
+        namespace_types: set[type[Balloon]] | None = None,
         top_types: set[type[Balloon]] | None = None,
+        top_nameable_types: set[type[Balloon]] | None = None,
     ) -> ClosedBalloonWorld:
         """
         Create an empty world of balloons.
 
         :param namespace_types: Balloon types representing a namespace.
-        :param nameable_types: Balloon types with named instances.
-        :param top_types: Balloon types not subtypes of any other type.
+        :param top_nameable_types: Top balloon types with named instances.
+        :param top_types: Top balloon types.
         """
+        if namespace_types is None:
+            namespace_types = {Balloon}
+
         if top_types is None:
-            top_types = {
-                t for t in Balloon.__subclasses__() if not issubclass(t, NamedBalloon)
-            }
+            top_types = {Balloon}
 
-        types_ = set(top_types)
-        discoverable_types = set(top_types)
-        while len(discoverable_types) > 0:
-            new_types: set[type[Balloon]] = set()
-            for discoverable_type in discoverable_types:
-                new_types.update(
-                    t
-                    for t in discoverable_type.__subclasses__()
-                    if t is not discoverable_type.Named and t not in types_
-                )
+        if top_nameable_types is None:
+            top_nameable_types = {Balloon}
 
-                for field_type in get_type_hints(discoverable_type).values():
-                    type_origin = get_origin(field_type)
-                    type_args = get_args(field_type)
+        types_ = BalloonWorld.discover(top_types)
+        nameable_types = BalloonWorld.discover(top_nameable_types)
 
-                    if type_origin is ClassVar:
-                        pass
-                    elif type_origin is dict:
-                        key_type, value_type = type_args
-                        if issubclass(key_type, Balloon) and key_type not in types_:
-                            new_types.add(key_type)
-                        if issubclass(value_type, Balloon) and value_type not in types_:
-                            new_types.add(value_type)
-                    elif type_origin is set or type_origin is tuple:
-                        (item_type,) = type_args
-                        if issubclass(item_type, Balloon) and item_type not in types_:
-                            new_types.add(item_type)
-                    elif type_origin is UnionType:
-                        if len(type_args) != 2 or type_args[1] is not NoneType:
-                            raise ValueError(f"Unsupported Union type: {field_type}")
-                        optional_type, _ = type_args
-                        if (
-                            issubclass(optional_type, Balloon)
-                            and optional_type not in types_
-                        ):
-                            new_types.add(optional_type)
-                    elif issubclass(field_type, Balloon) and field_type not in types_:
-                        new_types.add(field_type)
-            types_.update(new_types)
-            discoverable_types = new_types
-
-        if not namespace_types < types_:
+        if not namespace_types <= types_:
             raise ValueError("Namespace types must be a subset of all types")
 
-        if not nameable_types < types_:
+        if not nameable_types <= types_:
             raise ValueError("Nameable types must be a subset of all types")
 
         for nameable_type in nameable_types:

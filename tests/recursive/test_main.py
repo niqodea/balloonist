@@ -12,14 +12,11 @@ from tests.recursive.objects import (
     FRUIT_SALAD,
     VEGETABLE_SALAD,
 )
-from tests.recursive.schema import CompositeFood, Food, SimpleFood
+from tests.recursive.schema import Food
 
 DATABASE_PATH = Path(__file__).parent / "database"
 
-BASE_WORLD = ClosedBalloonWorld.create(
-    namespace_types={Food},
-    nameable_types={SimpleFood, CompositeFood},
-)
+BASE_WORLD = ClosedBalloonWorld.create()
 
 
 def test_inflation(tmp_path: Path) -> None:
