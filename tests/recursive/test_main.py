@@ -45,17 +45,16 @@ def test_inflation(tmp_path: Path) -> None:
 
 def test_consistency(tmp_path: Path) -> None:
     world = BASE_WORLD.to_open(tmp_path)
-    food_tracker = world.get_tracker(Food)
 
     # Simple
-    food_tracker.track(APPLE)
-    food_tracker.track(BANANA)
-    food_tracker.track(CARROT)
-    food_tracker.track(DATE)
+    world.track(APPLE)
+    world.track(BANANA)
+    world.track(CARROT)
+    world.track(DATE)
     # Composite
-    food_tracker.track(FRUIT_SALAD)
-    food_tracker.track(VEGETABLE_SALAD)
-    food_tracker.track(FRUIT_AND_VEGETABLE_SALAD)
+    world.track(FRUIT_SALAD)
+    world.track(VEGETABLE_SALAD)
+    world.track(FRUIT_AND_VEGETABLE_SALAD)
 
     # Simulate a new Python session by creating the objects again
 

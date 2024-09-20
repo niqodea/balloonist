@@ -51,21 +51,19 @@ def test_inflation(tmp_path: Path) -> None:
 
 def test_consistency(tmp_path: Path) -> None:
     world = BASE_WORLD.to_open(tmp_path)
-    animal_tracker = world.get_tracker(Animal)
-    owner_tracker = world.get_tracker(Owner)
 
     # Cats
-    animal_tracker.track(ABIGAIL)
-    animal_tracker.track(BENJAMIN)
-    animal_tracker.track(CHARLOTTE)
+    world.track(ABIGAIL)
+    world.track(BENJAMIN)
+    world.track(CHARLOTTE)
     # Dogs
-    animal_tracker.track(ALEX)
-    animal_tracker.track(BELLA)
-    animal_tracker.track(CODY)
+    world.track(ALEX)
+    world.track(BELLA)
+    world.track(CODY)
     # Owners
-    owner_tracker.track(ALICE)
-    owner_tracker.track(BOB)
-    owner_tracker.track(CAROL)
+    world.track(ALICE)
+    world.track(BOB)
+    world.track(CAROL)
 
     # Simulate a new Python session by creating the objects again
 

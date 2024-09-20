@@ -699,43 +699,7 @@ class DynamicTypeManager(DynamicTypeProvider, DynamicTypeTracker):
         self._name_to_dynamic_types[name].add(dynamic_type)
 
 
-class BalloonProvider(Protocol[B]):  # type: ignore[misc]
-    """
-    Provides named balloons of a balloon type, including subtypes.
-    """
-
-    def get(self, name: str) -> B:
-        """
-        Provide the balloon with the given name, possibly inflating it from the JSON
-        database if missing from memory.
-
-        :param name: Balloon name.
-        :return: Balloon with the given name.
-        """
-
-    def get_names(self) -> set[str]:
-        """
-        Provide the names of the balloons.
-
-        :return: Names of the balloons.
-        """
-
-
-class BalloonTracker(Protocol[B]):  # type: ignore[misc]
-    """
-    Tracks named balloons of a balloon type, including subtypes.
-    """
-
-    def track(self, balloon: B) -> None:
-        """
-        Track a balloon, possibly deflating it to the JSON database if missing from
-        disk.
-
-        :param balloon: Balloon to track.
-        """
-
-
-class StandardBalloonProvider(BalloonProvider[B]):
+class BalloonProvider(Generic[B]):
     """
     Provides named balloons of a balloon type, including subtypes.
     """
@@ -758,6 +722,13 @@ class StandardBalloonProvider(BalloonProvider[B]):
         self._specialized_providers = specialized_providers
 
     def get(self, name: str) -> B:
+        """
+        Provide the balloon with the given name, possibly inflating it from the JSON
+        database if missing from memory.
+
+        :param name: Balloon name.
+        :return: Balloon with the given name.
+        """
         type_ = self._dynamic_type_provider.get(name, self._type)
 
         if type_ is None:
@@ -766,71 +737,12 @@ class StandardBalloonProvider(BalloonProvider[B]):
         return self._specialized_providers[type_].get(name)  # type: ignore[return-value]
 
     def get_names(self) -> set[str]:
+        """
+        Provide the names of the balloons.
+
+        :return: Names of the balloons.
+        """
         return {n for p in self._specialized_providers.values() for n in p.get_names()}
-
-
-class StandardBalloonTracker(BalloonTracker[B]):
-    def __init__(
-        self,
-        type_: type[B],
-        specialized_trackers: dict[
-            type[Balloon], SpecializedBalloonTracker[NamedBalloon]
-        ],
-        dynamic_type_tracker: DynamicTypeManager,
-    ) -> None:
-        """
-        :param type_: Type of the managed balloons.
-        :param specialized_trackers: Specialized trackers for each type of balloon.
-        :param dynamic_type_tracker: Tracker of dynamic types of balloons.
-        """
-        self._type = type_
-        self._specialized_trackers = specialized_trackers
-        self._dynamic_type_tracker = dynamic_type_tracker
-
-    def track(self, balloon: B) -> None:
-        if not isinstance(balloon, NamedBalloon):
-            raise ValueError(f"Balloon is not named: {balloon}")
-
-        named_type = type(balloon)
-        type_ = named_type.Base
-
-        if type_ not in self._specialized_trackers:
-            raise ValueError(f"Unsupported balloon type: {type_}")
-
-        # Idempotent, makes sure the types match
-        self._dynamic_type_tracker.track(balloon.name, type_)
-        # Idempotent, makes sure the values match
-        self._specialized_trackers[type_].track(balloon)
-
-
-class BalloonManager(BalloonProvider[B], BalloonTracker[B]):
-    """
-    Manages named balloons of a balloon type, including subtypes.
-    """
-
-    def __init__(
-        self,
-        type_: type[B],
-        provider: BalloonProvider[B],
-        tracker: BalloonTracker[B],
-    ) -> None:
-        """
-        :param type_: Type of the managed balloons.
-        :param provider: Provider of the balloons.
-        :param tracker: Tracker of the balloons.
-        """
-        self._type = type_
-        self._provider = provider
-        self._tracker = tracker
-
-    def get(self, name: str) -> B:
-        return self._provider.get(name)
-
-    def get_names(self) -> set[str]:
-        return self._provider.get_names()
-
-    def track(self, balloon: B) -> None:
-        self._tracker.track(balloon)
 
 
 class Balloonist(Generic[B]):
@@ -1030,7 +942,7 @@ class ClosedBalloonWorld(BalloonWorld):
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
         ] = {t: self._specialized_providers[t] for t in nameable_types}
 
-        return StandardBalloonProvider(
+        return BalloonProvider(
             type_=type_,
             specialized_providers=specialized_providers,
             dynamic_type_provider=self._dynamic_type_provider,
@@ -1265,7 +1177,7 @@ class OpenBalloonWorld:
             type[Balloon], SpecializedBalloonProvider[NamedBalloon]
         ] = {t: self._specialized_providers[t] for t in nameable_types}
 
-        return StandardBalloonProvider(
+        return BalloonProvider(
             type_=type_,
             specialized_providers=specialized_providers,
             dynamic_type_provider=self._dynamic_type_manager,
@@ -1281,38 +1193,21 @@ class OpenBalloonWorld:
             deflator=self._deflator,
         )
 
-    # TODO: Refactor this to a simple world.track()
-    def get_tracker(self, type_: type[B]) -> BalloonTracker[B]:
+    def track(self, balloon: Balloon) -> None:
         """
-        Instantiate a balloon tracker for a balloon type.
-
-        :param type_: Balloon type.
-        :return: Balloon tracker for the balloon type.
+        Track a balloon, possibly deflating it to the JSON database if missing from
+        disk.
         """
+        if not isinstance(balloon, NamedBalloon):
+            raise ValueError(f"Balloon is not named: {balloon}")
 
-        if all(not issubclass(type_, t) for t in self._schema.namespace_types):
+        named_type = type(balloon)
+        type_ = named_type.Base
+
+        if type_ not in self._specialized_trackers:
             raise ValueError(f"Unsupported balloon type: {type_}")
 
-        specialized_trackers = {
-            t: specialized_tracker
-            for t, specialized_tracker in self._specialized_trackers.items()
-            if issubclass(t, type_)
-        }
-
-        return StandardBalloonTracker(
-            type_=type_,
-            specialized_trackers=specialized_trackers,  # type: ignore[arg-type]
-            dynamic_type_tracker=self._dynamic_type_manager,
-        )
-
-    # TODO: Remove this
-    def get_manager(self, type_: type[B]) -> BalloonManager[B]:
-        """
-        Instantiate a manager for a balloon type.
-
-        :param type_: Balloon type.
-        :return: Balloonist for the balloon type.
-        """
-        provider = self.get_provider(type_)
-        tracker = self.get_tracker(type_)
-        return BalloonManager(type_=type_, provider=provider, tracker=tracker)
+        # Idempotent, makes sure the types match
+        self._dynamic_type_manager.track(balloon.name, type_)
+        # Idempotent, makes sure the values match
+        self._specialized_trackers[type_].track(balloon)
