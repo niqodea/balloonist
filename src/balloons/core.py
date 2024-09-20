@@ -1034,8 +1034,8 @@ class ClosedBalloonWorld(BalloonWorld):
         if top_nameable_types is None:
             top_nameable_types = {Balloon}
 
-        types_ = ClosedBalloonWorld._discover(top_types)
-        nameable_types = ClosedBalloonWorld._discover(top_nameable_types)
+        types_ = ClosedBalloonWorld._get_dependency_closure(top_types)
+        nameable_types = ClosedBalloonWorld._get_subtype_closure(top_nameable_types)
 
         if not namespace_types <= types_:
             raise ValueError("Namespace types must be a subset of all types")
@@ -1077,52 +1077,53 @@ class ClosedBalloonWorld(BalloonWorld):
         )
 
     @staticmethod
-    def _discover(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
-        """
-        Discover the balloon types given the top types.
-        """
-        types_ = set(top_types)
-        discoverable_types = set(top_types)
-        while len(discoverable_types) > 0:
-            new_types: set[type[Balloon]] = set()
-            for discoverable_type in discoverable_types:
-                new_types.update(
-                    t
-                    for t in discoverable_type.__subclasses__()
-                    if t is not discoverable_type.Named and t not in types_
-                )
-
-                for field_type in get_type_hints(discoverable_type).values():
+    def _get_dependency_closure(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
+        closure_types = set(top_types)
+        active_types = set(top_types)
+        while len(active_types) > 0:
+            frontier_types = set()
+            for type_ in active_types:
+                frontier_types.update(type_.__subclasses__())
+                # NOTE: This cannot be made recursive due to the infinite loops caused
+                # by forward references
+                for field_type in get_type_hints(type_).values():
                     type_origin = get_origin(field_type)
                     type_args = get_args(field_type)
-
                     if type_origin is ClassVar:
                         pass
                     elif type_origin is dict:
                         key_type, value_type = type_args
-                        if issubclass(key_type, Balloon) and key_type not in types_:
-                            new_types.add(key_type)
-                        if issubclass(value_type, Balloon) and value_type not in types_:
-                            new_types.add(value_type)
+                        frontier_types.add(key_type)
+                        frontier_types.add(value_type)
                     elif type_origin is set or type_origin is tuple:
                         (item_type,) = type_args
-                        if issubclass(item_type, Balloon) and item_type not in types_:
-                            new_types.add(item_type)
+                        frontier_types.add(item_type)
                     elif type_origin is UnionType:
                         if len(type_args) != 2 or type_args[1] is not NoneType:
                             raise ValueError(f"Unsupported Union type: {field_type}")
                         optional_type, _ = type_args
-                        if (
-                            issubclass(optional_type, Balloon)
-                            and optional_type not in types_
-                        ):
-                            new_types.add(optional_type)
-                    elif issubclass(field_type, Balloon) and field_type not in types_:
-                        new_types.add(field_type)
-            types_.update(new_types)
-            discoverable_types = new_types
+                        frontier_types.add(optional_type)
+                    elif issubclass(field_type, Balloon):
+                        frontier_types.add(field_type)
 
-        return types_
+            active_types = frontier_types - closure_types
+            closure_types.update(frontier_types)
+
+        return closure_types
+
+    @staticmethod
+    def _get_subtype_closure(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
+        closure_types = set(top_types)
+        active_types = set(top_types)
+        while len(active_types) > 0:
+            frontier_types = set()
+            for type_ in active_types:
+                frontier_types.update(type_.__subclasses__())
+
+            active_types = frontier_types - closure_types
+            closure_types.update(frontier_types)
+
+        return closure_types
 
 
 class OpenBalloonWorld:
