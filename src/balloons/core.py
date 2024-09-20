@@ -85,7 +85,7 @@ def balloon(cls: type[Balloon]) -> type[Balloon]:
     Decorator required to correctly setup balloon classes.
     """
 
-    # TODO: Evaluate whehter having kw_only=True is a good idea here
+    # TODO: Evaluate whether having kw_only=True is a good idea here
     # It enables default values, but also disables positional arguments
     cls = dataclass(frozen=True)(cls)
 
