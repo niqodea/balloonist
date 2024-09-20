@@ -1035,8 +1035,8 @@ class ClosedBalloonWorld(BalloonWorld):
         if top_nameable_types is None:
             top_nameable_types = {Balloon}
 
-        types_ = ClosedBalloonWorld.discover(top_types)
-        nameable_types = ClosedBalloonWorld.discover(top_nameable_types)
+        types_ = ClosedBalloonWorld._discover(top_types)
+        nameable_types = ClosedBalloonWorld._discover(top_nameable_types)
 
         if not namespace_types <= types_:
             raise ValueError("Namespace types must be a subset of all types")
@@ -1078,7 +1078,7 @@ class ClosedBalloonWorld(BalloonWorld):
         )
 
     @staticmethod
-    def discover(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
+    def _discover(top_types: set[type[Balloon]]) -> set[type[Balloon]]:
         """
         Discover the balloon types given the top types.
         """
