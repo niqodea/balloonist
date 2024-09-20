@@ -1,20 +1,15 @@
 # Notes
 
+## Design question: Inflator-side vs Provider-side name-to-type resolution
 
-## A first approach
+Provider-side resolution would involve the usage of `.__subclasses__()` to build a hierarchy of providers so that each specialized provider can dispatch to the next one in the hierarchy.
 
-* Expose balloon specialist, and perhaps even namespace manager with methods
-* Create a wrapper method for a factory that takes an existing factory and wraps the objects above in a way such that the domain of balloons is extended with balloons from a new database
-  * These balloons can refer to other balloons inside the new database as well as balloons in the wrapped domain
+* First approch
+  \+ simple logic
+  \+ arguably faster
+  \- prohibits same-name classes
+  \- not modular
 
-
-## Problems
-
-* If the wrapper can have same name instances, it can cause the `.get(name)` result to change over time, potentially leading to inconsistent states.
-* If the wrapper blocks same name instances, tracking stuff with the wrapped can lead to same names anyways
-
-So we block same name instances and have the wrapped be a factory of providers only (read-only). You cannot wrap a factory of trackers (read-write).
-
-But we currently have no way to have a factory of trackers only. Let's see if it can be implemented easily.
-
-(in all this, we should probably change `BalloonistFactory` to `DatabaseManager`)
+* Second approach
+  \+ allows some form of same-name classes, as long as name resolution happens within a narrow enough class scope
+  \- complex
