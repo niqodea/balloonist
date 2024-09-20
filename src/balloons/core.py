@@ -1083,28 +1083,35 @@ class ClosedBalloonWorld(BalloonWorld):
         while len(active_types) > 0:
             frontier_types = set()
             for type_ in active_types:
-                frontier_types.update(type_.__subclasses__())
+                subtypes = set(type_.__subclasses__()) - {type_.Named}
+                frontier_types.update(subtypes)
                 # NOTE: This cannot be made recursive due to the infinite loops caused
                 # by forward references
                 for field_type in get_type_hints(type_).values():
                     type_origin = get_origin(field_type)
                     type_args = get_args(field_type)
-                    if type_origin is ClassVar:
-                        pass
+
+                    if type_origin is None:
+                        if issubclass(field_type, Balloon):
+                            frontier_types.add(field_type)
                     elif type_origin is dict:
                         key_type, value_type = type_args
-                        frontier_types.add(key_type)
-                        frontier_types.add(value_type)
+                        if issubclass(key_type, Balloon):
+                            frontier_types.add(key_type)
+                        if issubclass(value_type, Balloon):
+                            frontier_types.add(value_type)
                     elif type_origin is set or type_origin is tuple:
                         (item_type,) = type_args
-                        frontier_types.add(item_type)
+                        if issubclass(item_type, Balloon):
+                            frontier_types.add(item_type)
                     elif type_origin is UnionType:
                         if len(type_args) != 2 or type_args[1] is not NoneType:
                             raise ValueError(f"Unsupported Union type: {field_type}")
                         optional_type, _ = type_args
-                        frontier_types.add(optional_type)
-                    elif issubclass(field_type, Balloon):
-                        frontier_types.add(field_type)
+                        if issubclass(optional_type, Balloon):
+                            frontier_types.add(optional_type)
+                    elif type_origin is ClassVar:
+                        pass
 
             active_types = frontier_types - closure_types
             closure_types.update(frontier_types)
@@ -1118,7 +1125,8 @@ class ClosedBalloonWorld(BalloonWorld):
         while len(active_types) > 0:
             frontier_types = set()
             for type_ in active_types:
-                frontier_types.update(type_.__subclasses__())
+                subtypes = set(type_.__subclasses__()) - {type_.Named}
+                frontier_types.update(subtypes)
 
             active_types = frontier_types - closure_types
             closure_types.update(frontier_types)
